@@ -51,7 +51,7 @@ class TracerConfig:
     batch_size: int = 1000  # Process in chunks for efficiency
     
     # Stuff to ignore because it's boring
-    ignored_modules: Set[str] = field(default_factory=lambda: {'__pycache__', '.git'})
+    ignored_modules: Set[str] = field(default_factory=lambda: {'__pycacche__', '.git'})
     ignored_variables: Set[str] = field(default_factory=lambda: {'__builtins__', '__loader__', '__spec__'})
     traced_functions: Optional[Set[str]] = None  # None = trace everything (brave)
     

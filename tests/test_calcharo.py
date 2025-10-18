@@ -60,14 +60,13 @@ class TestHarness:
         print(f"{'=' * 70}")
         
         for result in self.results:
-            status_icon = "✅" if result["status"] == "PASS" else "❌"
-            print(f"  {status_icon} {result['message']}")
+            status_icon = "PASS" if result["status"] == "PASS" else "FAIL"
+            print(f"  {result['status']} {result['message']}")
         
         print(f"\nRESULTS: {self.passed} passed, {self.failed} failed")
-        success = self.failed == 0
-        print(f"STATUS: {'✅ SUCCESS' if success else '❌ FAILURE'}")
+        print(f"STATUS: {'SUCCESS' if self.failed == 0 else 'FAILURE'}")
         print("=" * 70)
-        return success
+        return self.failed == 0
 
 
 def test_bubble_sort_comprehensive():
@@ -465,20 +464,20 @@ def run_enterprise_test_suite():
     
     all_passed = True
     for name, passed in test_results:
-        status = "✅ PASS" if passed else "❌ FAIL"
+        status = "PASS" if passed else "FAIL"
         print(f"  {status} - {name}")
         all_passed = all_passed and passed
     
     print("\n" + "=" * 70)
     if all_passed:
-        print("🎉 ALL ENTERPRISE TESTS PASSED!")
-        print("✅ Stage 1 Complete: Calcharo Core is production-ready")
-        print("🔹 Enterprise-grade architecture implemented")
-        print("🔹 Comprehensive error handling in place")
-        print("🔹 Performance optimizations functional")
-        print("🔹 Data serialization working")
+        print("ALL ENTERPRISE TESTS PASSED!")
+        print("Stage 1 Complete: Calcharo Core is production-ready")
+        print("Enterprise-grade architecture implemented")
+        print("Comprehensive error handling in place")
+        print("Performance optimizations functional")
+        print("Data serialization working")
     else:
-        print("⚠️  Some tests failed. Fix them or ship it anyway, your choice.")
+        print("Some tests failed. Fix them or ship it anyway, your choice.")
     print("=" * 70)
     
     return all_passed
