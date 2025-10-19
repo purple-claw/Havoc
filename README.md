@@ -67,8 +67,8 @@ Because we needed an excuse to use all the cool kids' toys:
 
 ```bash
 # Clone this masterpiece
-git clone https://github.com/yourusername/havoc.git
-cd havoc
+git clone https://github.com/purple-claw/Havoc.git
+cd Havoc
 
 # Install Python dependencies (there aren't many, we're minimalists)
 pip install -r requirements.txt
@@ -271,4 +271,4 @@ Still confused? Join the club.
 
 ---
 
-*Built with caffeine and questionable design decisions*
+*Built with love by Purple-Claw*
