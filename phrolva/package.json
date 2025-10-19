@@ -1,0 +1,31 @@
+{
+  "name": "phrolva",
+  "version": "1.0.0",
+  "description": "Animation Engine for Code Visualization - where code comes to life",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "d3": "^7.8.5",
+    "framer-motion": "^11.0.0",
+    "react-spring": "^9.7.3",
+    "@react-spring/web": "^9.7.3",
+    "styled-components": "^6.1.0",
+    "lucide-react": "^0.292.0",
+    "zustand": "^4.4.6"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@types/d3": "^7.4.3",
+    "@types/styled-components": "^5.1.30",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.0",
+    "@vitejs/plugin-react": "^4.1.1"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  }
+}
