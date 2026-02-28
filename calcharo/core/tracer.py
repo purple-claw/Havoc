@@ -114,12 +114,12 @@ class ControlFlowHandler(NodeHandler):
             if condition:
                 for stmt in node.body:
                     result = tracer._execute_node(stmt, context)
-                    if result and result[0] == 'return':
+                    if isinstance(result, tuple) and result[0] == 'return':
                         return result
             elif node.orelse:
                 for stmt in node.orelse:
                     result = tracer._execute_node(stmt, context)
-                    if result and result[0] == 'return':
+                    if isinstance(result, tuple) and result[0] == 'return':
                         return result
                         
         elif isinstance(node, ast.While):
@@ -130,7 +130,7 @@ class ControlFlowHandler(NodeHandler):
             while tracer._eval_expression(node.test, context):
                 for stmt in node.body:
                     result = tracer._execute_node(stmt, context)
-                    if result:
+                    if isinstance(result, tuple):
                         if result[0] == 'return':
                             return result
                         elif result[0] == 'break':
@@ -158,7 +158,7 @@ class ControlFlowHandler(NodeHandler):
                 
                 for stmt in node.body:
                     result = tracer._execute_node(stmt, context)
-                    if result:
+                    if isinstance(result, tuple):
                         if result[0] == 'return':
                             return result
                         elif result[0] == 'break':
@@ -213,7 +213,7 @@ class FunctionHandler(NodeHandler):
                 return_value = None
                 for stmt in node.body:
                     result = tracer._execute_node(stmt, context)
-                    if result and result[0] == 'return':
+                    if isinstance(result, tuple) and result[0] == 'return':
                         return_value = result[1]
                         break
                 
@@ -382,7 +382,7 @@ class ExecutionTracer:
         if isinstance(node, ast.Module):
             for stmt in node.body:
                 result = self._execute_node(stmt, context)
-                if result:
+                if isinstance(result, tuple):
                     return result
         
         elif isinstance(node, ast.Expr):
@@ -394,6 +394,45 @@ class ExecutionTracer:
                 )
                 self.steps.append(step)
             return value
+        
+        elif isinstance(node, ast.Import):
+            # Handle: import heapq, import collections, etc.
+            namespace = context.local_namespace if context.local_namespace else context.global_namespace
+            SAFE_MODULES = {
+                'math', 'random', 'collections', 'heapq', 'itertools',
+                'functools', 'string', 're', 'json', 'copy', 'bisect',
+                'array', 'typing', 'dataclasses', 'enum', 'operator',
+            }
+            for alias in node.names:
+                mod_name = alias.name.split('.')[0]
+                if mod_name in SAFE_MODULES:
+                    try:
+                        mod = __import__(alias.name)
+                        local_name = alias.asname if alias.asname else alias.name
+                        namespace[local_name] = mod
+                    except ImportError:
+                        pass
+            return None
+        
+        elif isinstance(node, ast.ImportFrom):
+            # Handle: from collections import deque, from heapq import heappush, etc.
+            namespace = context.local_namespace if context.local_namespace else context.global_namespace
+            SAFE_MODULES = {
+                'math', 'random', 'collections', 'heapq', 'itertools',
+                'functools', 'string', 're', 'json', 'copy', 'bisect',
+                'array', 'typing', 'dataclasses', 'enum', 'operator',
+            }
+            if node.module and node.module.split('.')[0] in SAFE_MODULES:
+                try:
+                    mod = __import__(node.module, fromlist=[a.name for a in node.names])
+                    for alias in node.names:
+                        obj = getattr(mod, alias.name, None)
+                        local_name = alias.asname if alias.asname else alias.name
+                        if obj is not None:
+                            namespace[local_name] = obj
+                except ImportError:
+                    pass
+            return None
         
         return None
     

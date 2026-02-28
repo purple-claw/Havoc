@@ -1,207 +1,243 @@
-// AnimatedHashMap — dictionary/hash map visualization with bucket animation
-// Shows key-value pairs hashing into buckets with spring physics
+// AnimatedHashMap — store-driven key-value visualization
+// Rebuilds dictionary from step variables, applies SET_VALUE/DELETE/HIGHLIGHT effects
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useSprings, animated } from '@react-spring/web';
-import styled from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
+import { useAnimationStore } from '../stores/animationStore';
 import type { AnimationCommand } from '../types/animation.types';
+
+const flashIn = keyframes`
+  0%   { transform: scaleX(0.3); opacity: 0; }
+  60%  { transform: scaleX(1.03); }
+  100% { transform: scaleX(1); opacity: 1; }
+`;
 
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 2rem;
-  min-height: 300px;
-`;
-
-const BucketsContainer = styled.div`
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
   justify-content: center;
-  max-width: 700px;
+  width: 100%;
+  height: 100%;
+  padding: 2rem;
+  user-select: none;
+  overflow: auto;
 `;
 
-const Bucket = styled.div<{ $hasItems?: boolean }>`
-  min-width: 100px;
-  border: 2px solid ${({ $hasItems }) => ($hasItems ? '#667eea' : '#333')};
-  border-radius: 8px;
+const BucketGrid = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 500px;
+  width: 100%;
+`;
+
+type EntryStatus = 'idle' | 'inserted' | 'updated' | 'deleted' | 'lookup' | 'highlight';
+
+const statusBg: Record<EntryStatus, string> = {
+  idle: 'rgba(255,255,255,0.04)',
+  inserted: 'rgba(0,230,118,0.15)',
+  updated: 'rgba(255,215,64,0.15)',
+  deleted: 'rgba(255,82,82,0.15)',
+  lookup: 'rgba(24,255,255,0.15)',
+  highlight: 'rgba(102,126,234,0.15)',
+};
+const statusBorder: Record<EntryStatus, string> = {
+  idle: 'rgba(255,255,255,0.06)',
+  inserted: 'rgba(0,230,118,0.35)',
+  updated: 'rgba(255,215,64,0.35)',
+  deleted: 'rgba(255,82,82,0.35)',
+  lookup: 'rgba(24,255,255,0.35)',
+  highlight: 'rgba(102,126,234,0.35)',
+};
+
+const EntryRow = styled(animated.div)<{ $status: EntryStatus }>`
+  display: flex;
+  align-items: stretch;
+  border-radius: 6px;
   overflow: hidden;
-  background: #0d0d1a;
+  background: ${p => statusBg[p.$status]};
+  border: 1px solid ${p => statusBorder[p.$status]};
+  transition: background 0.25s, border-color 0.25s;
+  ${p => p.$status === 'inserted' && css`animation: ${flashIn} 0.35s ease-out;`}
 `;
 
-const BucketHeader = styled.div`
-  padding: 0.4rem 0.6rem;
-  background: #1a1a2e;
-  font-size: 0.7rem;
-  color: #888;
-  text-align: center;
-  border-bottom: 1px solid #333;
-`;
-
-const BucketItem = styled(animated.div)<{ $isNew?: boolean; $isHighlighted?: boolean }>`
-  padding: 0.5rem 0.6rem;
+const KeyCell = styled.div`
+  min-width: 100px;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  font-family: var(--font-mono, monospace);
+  color: var(--accent-cyan, #18ffff);
+  background: rgba(255,255,255,0.02);
+  border-right: 1px solid rgba(255,255,255,0.06);
   display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  border-bottom: 1px solid #1a1a2e;
-  background: ${({ $isHighlighted }) => ($isHighlighted ? 'rgba(102, 126, 234, 0.2)' : 'transparent')};
-  
-  &:last-child {
-    border-bottom: none;
-  }
+  align-items: center;
 `;
 
-const Key = styled.span`
-  color: #4facfe;
-  font-weight: bold;
+const ValueCell = styled.div`
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary, #e0e0e0);
+  display: flex;
+  align-items: center;
 `;
 
-const Value = styled.span`
-  color: #43e97b;
+const HashBadge = styled.span`
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-tertiary, #555);
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: rgba(255,255,255,0.04);
 `;
 
-const EmptyBucket = styled.div`
-  padding: 0.5rem;
-  color: #444;
-  font-size: 0.75rem;
-  text-align: center;
+const InfoLabel = styled.div`
+  font-size: 11px;
+  color: var(--text-tertiary, #666);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-top: 10px;
+`;
+
+const ActionLabel = styled.div`
+  margin-top: 4px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--accent-cyan, #18ffff);
+`;
+
+const EmptyMsg = styled.div`
+  color: var(--text-tertiary, #555);
   font-style: italic;
+  padding: 3rem;
+  font-size: 13px;
 `;
 
-const StatsBar = styled.div`
-  margin-top: 1rem;
-  display: flex;
-  gap: 1.5rem;
-  font-size: 0.8rem;
-  color: #888;
-`;
+interface EntryState { key: string; value: string; status: EntryStatus; hash: number; }
 
-const NUM_BUCKETS = 7;
-
-// Simple hash function for visualization
 function simpleHash(key: string): number {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash * 31 + key.charCodeAt(i)) % NUM_BUCKETS;
-  }
-  return Math.abs(hash);
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) | 0;
+  return Math.abs(h) % 97;
 }
 
-interface HashEntry {
-  key: string;
-  value: any;
-  bucket: number;
-  isHighlighted: boolean;
-  isNew: boolean;
-}
+const AnimatedHashMap: React.FC = () => {
+  const { currentStepIndex, currentStep, debugState, vizData } = useAnimationStore();
+  const currentStepCommands: AnimationCommand[] = useAnimationStore(
+    s => (s as any).currentStepCommands ?? []
+  );
+  const previousVariables = useAnimationStore(s => s.previousVariables);
 
-interface AnimatedHashMapProps {
-  commands: AnimationCommand[];
-  currentFrame: number;
-  speed: number;
-}
+  const [entries, setEntries] = useState<EntryState[]>([]);
+  const [actionText, setActionText] = useState('');
 
-const AnimatedHashMap: React.FC<AnimatedHashMapProps> = ({ commands, currentFrame, speed }) => {
-  const [entries, setEntries] = useState<HashEntry[]>([]);
-  const [lastAction, setLastAction] = useState('');
+  const findDictVar = useCallback((vars: Record<string, any>): Record<string, any> | null => {
+    if (!vars) return null;
+    const ds = vizData?.visualizer_config?.data_structures;
+    const hints = [...(ds?.dicts ?? [])];
+    const names = ['hash_map', 'hashmap', 'map', 'dict', 'table', 'cache', 'memo', 'counter', 'freq', 'count', 'lookup', 'd'];
+    for (const n of [...hints, ...names]) {
+      if (vars[n] && typeof vars[n] === 'object' && !Array.isArray(vars[n])) return vars[n];
+    }
+    // Fallback: first dict variable
+    for (const [k, v] of Object.entries(vars)) {
+      if (k.startsWith('__')) continue;
+      if (v && typeof v === 'object' && !Array.isArray(v)) return v;
+    }
+    return null;
+  }, [vizData]);
 
   useEffect(() => {
-    const map = new Map<string, { value: any; bucket: number }>();
-    let highlightedKey: string | null = null;
-    let latestKey: string | null = null;
+    if (currentStepIndex < 0 || !currentStep) {
+      if (debugState === 'idle' || debugState === 'ready') { setEntries([]); setActionText(''); }
+      return;
+    }
 
-    for (let i = 0; i <= Math.min(currentFrame, commands.length - 1); i++) {
-      const cmd = commands[i];
-      if (!cmd) continue;
+    const dict = findDictVar(currentStep.variables);
+    if (!dict) { setEntries([]); return; }
 
-      const cmdType = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
-      const key = String(cmd.target ?? '');
-      const meta = cmd.metadata || {};
+    const prevDict = findDictVar(previousVariables) ?? {};
 
-      if (
-        cmdType === 'SET_VALUE' ||
-        cmdType === 'CREATE' ||
-        cmdType.includes('INSERT')
-      ) {
-        const k = key || String(cmd.value);
-        const bucket = meta.bucket ?? simpleHash(k);
-        map.set(k, { value: cmd.value, bucket: bucket % NUM_BUCKETS });
-        highlightedKey = k;
-        latestKey = k;
-        setLastAction(`set("${k}", ${JSON.stringify(cmd.value)})`);
-      } else if (cmdType === 'DELETE') {
-        if (map.has(key)) {
-          setLastAction(`delete("${key}")`);
-          map.delete(key);
+    const newEntries: EntryState[] = Object.entries(dict).map(([k, v]) => {
+      let status: EntryStatus = 'idle';
+      if (!(k in prevDict)) status = 'inserted';
+      else if (JSON.stringify(prevDict[k]) !== JSON.stringify(v)) status = 'updated';
+      return {
+        key: String(k),
+        value: typeof v === 'object' ? JSON.stringify(v) : String(v),
+        status,
+        hash: simpleHash(String(k)),
+      };
+    });
+
+    // Apply command effects
+    let action = '';
+    for (const cmd of currentStepCommands) {
+      const t = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
+      const vals = cmd.values ?? {};
+
+      if (t === 'CREATE' || t === 'SET_VALUE') {
+        const key = vals.key as string | undefined;
+        if (key) {
+          const entry = newEntries.find(e => e.key === key);
+          if (entry) entry.status = t === 'CREATE' ? 'inserted' : 'updated';
+          action = t === 'CREATE' ? `insert("${key}")` : `update("${key}")`;
         }
-      } else if (cmdType === 'HIGHLIGHT' || cmdType === 'VISIT') {
-        highlightedKey = key;
-      } else if (cmdType === 'UNMARK') {
-        highlightedKey = null;
+      } else if (t === 'DELETE') {
+        action = `delete("${vals.key ?? ''}")`;
+      } else if (t === 'HIGHLIGHT') {
+        const key = vals.key as string | undefined;
+        if (key) {
+          const entry = newEntries.find(e => e.key === key);
+          if (entry) entry.status = 'lookup';
+          action = `lookup("${key}")`;
+        }
       }
     }
 
-    const entryList: HashEntry[] = [];
-    map.forEach(({ value, bucket }, key) => {
-      entryList.push({
-        key,
-        value,
-        bucket,
-        isHighlighted: key === highlightedKey,
-        isNew: key === latestKey,
-      });
-    });
+    // Sort by hash for visual bucket grouping
+    newEntries.sort((a, b) => a.hash - b.hash);
+    setEntries(newEntries);
+    if (action) setActionText(action);
+  }, [currentStepIndex, currentStep, currentStepCommands, previousVariables, findDictVar, debugState]);
 
-    setEntries(entryList);
-  }, [commands, currentFrame]);
+  const springs = useSprings(
+    entries.length,
+    entries.map(() => ({
+      opacity: 1, transform: 'translateX(0px)',
+      config: { tension: 180, friction: 25 },
+      from: { opacity: 0.5, transform: 'translateX(-15px)' },
+    }))
+  );
 
-  // Group entries by bucket
-  const buckets: HashEntry[][] = Array.from({ length: NUM_BUCKETS }, () => []);
-  entries.forEach((e) => {
-    if (e.bucket < buckets.length) {
-      buckets[e.bucket].push(e);
-    }
-  });
+  if (entries.length === 0) {
+    return <Container><EmptyMsg>Empty HashMap</EmptyMsg></Container>;
+  }
 
   return (
     <Container>
-      <BucketsContainer>
-        {buckets.map((bucket, bi) => (
-          <Bucket key={bi} $hasItems={bucket.length > 0}>
-            <BucketHeader>Bucket {bi}</BucketHeader>
-            {bucket.length > 0 ? (
-              bucket.map((entry) => (
-                <BucketItem
-                  key={entry.key}
-                  $isHighlighted={entry.isHighlighted}
-                  $isNew={entry.isNew}
-                >
-                  <Key>{entry.key}</Key>
-                  <Value>{JSON.stringify(entry.value)}</Value>
-                </BucketItem>
-              ))
-            ) : (
-              <EmptyBucket>empty</EmptyBucket>
-            )}
-          </Bucket>
-        ))}
-      </BucketsContainer>
-
-      <StatsBar>
-        <span>{entries.length} entries</span>
-        <span>{buckets.filter((b) => b.length > 0).length}/{NUM_BUCKETS} buckets used</span>
-        <span>
-          Load factor: {(entries.length / NUM_BUCKETS).toFixed(2)}
-        </span>
-      </StatsBar>
-
-      {lastAction && (
-        <div style={{ marginTop: '0.5rem', color: '#4facfe', fontSize: '0.85rem' }}>
-          Last: {lastAction}
-        </div>
-      )}
+      <BucketGrid>
+        {springs.map((style, i) => {
+          const entry = entries[i];
+          if (!entry) return null;
+          return (
+            <EntryRow key={entry.key} style={style} $status={entry.status}>
+              <KeyCell>{entry.key}</KeyCell>
+              <ValueCell>
+                {entry.value}
+                <HashBadge>#{entry.hash}</HashBadge>
+              </ValueCell>
+            </EntryRow>
+          );
+        })}
+      </BucketGrid>
+      <InfoLabel>HashMap ({entries.length} entries)</InfoLabel>
+      {actionText && <ActionLabel>{actionText}</ActionLabel>}
     </Container>
   );
 };

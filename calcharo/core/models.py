@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional, Set, Tuple, Union, FrozenSet
 from enum import Enum, auto
 import copy
 import json
+import types as _types
 from datetime import datetime
 
 
@@ -255,7 +256,9 @@ class ExecutionContext:
         current_heap = {}
         
         for name, value in current_vars.items():
-            if not name.startswith('__') and not callable(value):
+            if (not name.startswith('__')
+                    and not callable(value)
+                    and not isinstance(value, _types.ModuleType)):
                 filtered_vars[name] = value
                 if isinstance(value, (list, dict, set)):
                     # Track the mutable stuff because it might change

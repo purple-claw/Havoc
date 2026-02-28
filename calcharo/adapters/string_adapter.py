@@ -27,7 +27,8 @@ class StringAdapter(VisualizationAdapter):
         
         # Look for strings being manipulated
         string_found = False
-        string_keywords = ['text', 'string', 'str', 'word', 'sentence', 'pattern']
+        string_keywords = ['text', 'string', 'str', 'word', 'sentence', 'pattern',
+                           'char', 'substr', 'prefix', 'suffix', 'palindrome']
         
         for step in execution_steps:
             for var_name, var_value in step.variables_state.items():
@@ -40,8 +41,8 @@ class StringAdapter(VisualizationAdapter):
                                 self.tracked_string_name = var_name
                             string_found = True
                             break
-                        # Also accept any substantial string
-                        elif len(var_value) > 5:
+                        # Accept any string of length >= 3 as candidate
+                        elif len(var_value) >= 3:
                             if self.tracked_string_name is None:
                                 self.tracked_string_name = var_name
                             string_found = True

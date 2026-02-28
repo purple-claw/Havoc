@@ -39,9 +39,9 @@ class GraphAdapter(VisualizationAdapter):
                             self.tracked_graph_name = var_name
                         return True
                 
-                # Check for graph-like structure (dict of lists/sets)
-                if isinstance(var_value, dict):
-                    # Might be adjacency list
+                # Check for graph-like structure (non-empty dict of lists/sets)
+                if isinstance(var_value, dict) and var_value:
+                    # Might be adjacency list — require non-empty dict
                     if all(isinstance(v, (list, set)) for v in var_value.values()):
                         if self.tracked_graph_name is None:
                             self.tracked_graph_name = var_name

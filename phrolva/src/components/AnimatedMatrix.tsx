@@ -1,301 +1,245 @@
-// AnimatedMatrix — 2D grid/table visualization with heatmap coloring
-// Cells fill as values change, cursor highlights active position, row sweeps for DP
+// AnimatedMatrix — store-driven 2D grid/matrix visualization
+// Rebuilds matrix from step variables, applies SET_VALUE/HIGHLIGHT/MARK effects
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { useSpring, animated, useSprings } from '@react-spring/web';
-import styled from 'styled-components';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import styled, { css, keyframes } from 'styled-components';
+import { useAnimationStore } from '../stores/animationStore';
 import type { AnimationCommand } from '../types/animation.types';
+
+const cellPulse = keyframes`
+  0%   { box-shadow: inset 0 0 0 0 rgba(0,230,118,0.4); }
+  50%  { box-shadow: inset 0 0 8px 2px rgba(0,230,118,0.2); }
+  100% { box-shadow: inset 0 0 0 0 rgba(0,230,118,0); }
+`;
 
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
   padding: 2rem;
+  user-select: none;
   overflow: auto;
 `;
 
-const GridWrapper = styled.div`
-  display: inline-block;
+const Grid = styled.div<{ $cols: number }>`
+  display: grid;
+  grid-template-columns: repeat(${p => p.$cols}, 1fr);
+  gap: 2px;
+  padding: 6px;
   border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
 `;
 
-const Row = styled.div`
-  display: flex;
-`;
+type CellStatus = 'idle' | 'highlight' | 'changed' | 'marked';
 
-const CellBase = styled(animated.div)<{
-  $isHighlighted?: boolean;
-  $isActive?: boolean;
-  $bgColor?: string;
-}>`
-  width: 48px;
-  height: 48px;
+const cellBg: Record<CellStatus, string> = {
+  idle: 'rgba(255,255,255,0.04)',
+  highlight: 'rgba(24,255,255,0.2)',
+  changed: 'rgba(0,230,118,0.2)',
+  marked: 'rgba(255,215,64,0.18)',
+};
+const cellBorder: Record<CellStatus, string> = {
+  idle: 'rgba(255,255,255,0.06)',
+  highlight: 'rgba(24,255,255,0.4)',
+  changed: 'rgba(0,230,118,0.4)',
+  marked: 'rgba(255,215,64,0.35)',
+};
+
+const CellBox = styled.div<{ $status: CellStatus; $heat: number }>`
+  min-width: 38px;
+  min-height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.85rem;
-  font-weight: ${({ $isActive }) => ($isActive ? 'bold' : 'normal')};
-  color: ${({ $isHighlighted }) => ($isHighlighted ? '#fff' : '#ccc')};
-  background: ${({ $bgColor }) => $bgColor || '#1a1a2e'};
-  border: 1px solid ${({ $isHighlighted }) => ($isHighlighted ? '#00d4ff' : '#2a2a4e')};
-  transition: border-color 0.2s;
-  position: relative;
-  user-select: none;
-
-  ${({ $isActive }) =>
-    $isActive &&
-    `
-    box-shadow: inset 0 0 12px rgba(0, 212, 255, 0.3);
-    z-index: 2;
-  `}
+  font-weight: 700;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary, #e0e0e0);
+  border-radius: 4px;
+  background: ${p => p.$status !== 'idle'
+    ? cellBg[p.$status]
+    : `rgba(${Math.round(15 + p.$heat * 200)}, ${Math.round(100 - p.$heat * 60)}, ${Math.round(200 - p.$heat * 150)}, 0.2)`
+  };
+  border: 1px solid ${p => cellBorder[p.$status]};
+  transition: background 0.25s, border-color 0.25s;
+  ${p => p.$status === 'changed' && css`animation: ${cellPulse} 0.5s ease-out;`}
 `;
 
 const RowLabel = styled.div`
-  width: 32px;
-  height: 48px;
+  font-size: 9px;
+  color: var(--text-tertiary, #555);
+  font-family: var(--font-mono, monospace);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.7rem;
-  color: #666;
+  padding-right: 6px;
 `;
 
-const ColLabels = styled.div`
-  display: flex;
-  margin-left: 32px;
+const ColLabels = styled.div<{ $cols: number }>`
+  display: grid;
+  grid-template-columns: 24px repeat(${p => p.$cols}, 1fr);
+  gap: 2px;
+  padding: 0 6px;
 `;
 
 const ColLabel = styled.div`
-  width: 48px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  color: #666;
+  font-size: 9px;
+  color: var(--text-tertiary, #555);
+  font-family: var(--font-mono, monospace);
+  text-align: center;
 `;
 
-const InfoBar = styled.div`
-  margin-top: 1rem;
-  display: flex;
-  gap: 1.5rem;
-  font-size: 0.8rem;
-  color: #888;
+const InfoLabel = styled.div`
+  font-size: 11px;
+  color: var(--text-tertiary, #666);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-top: 10px;
 `;
 
-// Color interpolation for heatmap
-function heatmapColor(value: number, min: number, max: number): string {
-  if (max === min) return '#1a1a2e';
-  const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
+const ActionLabel = styled.div`
+  margin-top: 4px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--accent-cyan, #18ffff);
+`;
 
-  // Dark blue → purple → red → yellow
-  const colors = [
-    [26, 26, 46],   // #1a1a2e
-    [15, 52, 96],   // #0f3460
-    [102, 126, 234], // #667eea
-    [233, 69, 96],  // #e94560
-    [250, 200, 60], // #fac83c
-  ];
+const EmptyMsg = styled.div`
+  color: var(--text-tertiary, #555);
+  font-style: italic;
+  padding: 3rem;
+  font-size: 13px;
+`;
 
-  const segment = t * (colors.length - 1);
-  const i = Math.floor(segment);
-  const f = segment - i;
-  const c1 = colors[Math.min(i, colors.length - 1)];
-  const c2 = colors[Math.min(i + 1, colors.length - 1)];
+interface CellState { value: string; status: CellStatus; heat: number; }
 
-  const r = Math.round(c1[0] + (c2[0] - c1[0]) * f);
-  const g = Math.round(c1[1] + (c2[1] - c1[1]) * f);
-  const b = Math.round(c1[2] + (c2[2] - c1[2]) * f);
+const AnimatedMatrix: React.FC = () => {
+  const { currentStepIndex, currentStep, debugState, vizData } = useAnimationStore();
+  const currentStepCommands: AnimationCommand[] = useAnimationStore(
+    s => (s as any).currentStepCommands ?? []
+  );
 
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
-interface CellState {
-  value: any;
-  isHighlighted: boolean;
-  isActive: boolean;
-  wasModified: boolean;
-}
-
-interface AnimatedMatrixProps {
-  commands: AnimationCommand[];
-  currentFrame: number;
-  speed: number;
-}
-
-const AnimatedMatrix: React.FC<AnimatedMatrixProps> = ({ commands, currentFrame, speed }) => {
   const [grid, setGrid] = useState<CellState[][]>([]);
-  const [activeCell, setActiveCell] = useState<[number, number] | null>(null);
-  const [modifications, setModifications] = useState(0);
+  const [actionText, setActionText] = useState('');
 
-  // Build matrix state from commands
+  const findMatrixVar = useCallback((vars: Record<string, any>): any[][] | null => {
+    if (!vars) return null;
+    const ds = vizData?.visualizer_config?.data_structures;
+    const hints = [...(ds?.arrays ?? [])];
+    const names = ['matrix', 'grid', 'board', 'table', 'dp', 'memo', 'maze', 'map', 'cells', 'rows'];
+    for (const n of [...hints, ...names]) {
+      const v = vars[n];
+      if (Array.isArray(v) && v.length > 0 && Array.isArray(v[0])) return v;
+    }
+    // Fallback: first 2D list
+    for (const v of Object.values(vars)) {
+      if (Array.isArray(v) && v.length > 0 && Array.isArray(v[0])) return v;
+    }
+    return null;
+  }, [vizData]);
+
   useEffect(() => {
-    let matrix: any[][] = [];
-    let rows = 0;
-    let cols = 0;
-    const highlighted = new Set<string>();
-    let active: [number, number] | null = null;
-    let modCount = 0;
+    if (currentStepIndex < 0 || !currentStep) {
+      if (debugState === 'idle' || debugState === 'ready') { setGrid([]); setActionText(''); }
+      return;
+    }
 
-    for (let i = 0; i <= Math.min(currentFrame, commands.length - 1); i++) {
-      const cmd = commands[i];
-      if (!cmd) continue;
+    const matrix = findMatrixVar(currentStep.variables);
+    if (!matrix || matrix.length === 0) { setGrid([]); return; }
 
-      const cmdType = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
-      const meta = cmd.metadata || {};
+    // Find min/max for heat map
+    let min = Infinity, max = -Infinity;
+    for (const row of matrix) {
+      for (const v of row) {
+        const n = typeof v === 'number' ? v : 0;
+        if (n < min) min = n;
+        if (n > max) max = n;
+      }
+    }
+    const range = max - min || 1;
 
-      if (cmdType === 'CREATE') {
-        // Initialize matrix dimensions
-        const initData = cmd.value;
-        if (Array.isArray(initData) && Array.isArray(initData[0])) {
-          matrix = initData.map((row: any[]) => [...row]);
-          rows = matrix.length;
-          cols = matrix[0]?.length || 0;
-        } else if (meta.rows && meta.cols) {
-          rows = meta.rows;
-          cols = meta.cols;
-          matrix = Array.from({ length: rows }, () =>
-            Array.from({ length: cols }, () => 0)
-          );
+    const newGrid: CellState[][] = matrix.map(row =>
+      (row as any[]).map((v: any) => {
+        const num = typeof v === 'number' ? v : 0;
+        return {
+          value: typeof v === 'object' ? JSON.stringify(v) : String(v),
+          status: 'idle' as CellStatus,
+          heat: (num - min) / range,
+        };
+      })
+    );
+
+    // Apply command effects
+    let action = '';
+    for (const cmd of currentStepCommands) {
+      const t = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
+      const vals = cmd.values ?? {};
+      const r = vals.row as number | undefined;
+      const c = vals.col as number | undefined;
+
+      if (t === 'SET_VALUE') {
+        if (r !== undefined && c !== undefined && newGrid[r]?.[c]) {
+          newGrid[r][c].status = 'changed';
+          action = `[${r}][${c}] = ${vals.new_value ?? ''}`;
         }
-      } else if (cmdType === 'SET_VALUE' || cmdType === 'HIGHLIGHT') {
-        const row = meta.row ?? (typeof cmd.target === 'number' ? cmd.target : undefined);
-        const col = meta.col ?? meta.column;
-
-        if (row !== undefined && col !== undefined) {
-          // Ensure matrix is large enough
-          while (matrix.length <= row) matrix.push([]);
-          while (matrix[row].length <= col) matrix[row].push(0);
-
-          if (cmdType === 'SET_VALUE') {
-            matrix[row][col] = cmd.value;
-            modCount++;
-          }
-
-          highlighted.clear();
-          highlighted.add(`${row},${col}`);
-          active = [row, col];
+      } else if (t === 'HIGHLIGHT') {
+        if (r !== undefined) {
+          // Highlight entire row
+          if (newGrid[r]) newGrid[r].forEach(cell => cell.status = 'highlight');
+          action = `highlight row ${r}`;
         }
-      } else if (cmdType === 'VISIT' || cmdType === 'COLOR_CHANGE') {
-        const row = meta.row;
-        const col = meta.col ?? meta.column;
-        if (row !== undefined && col !== undefined) {
-          highlighted.add(`${row},${col}`);
-          active = [row, col];
+        const indices: number[] = (cmd as any).indices ?? [];
+        for (const i of indices) {
+          const ri = Math.floor(i / (newGrid[0]?.length ?? 1));
+          const ci = i % (newGrid[0]?.length ?? 1);
+          if (newGrid[ri]?.[ci]) newGrid[ri][ci].status = 'highlight';
         }
-      } else if (cmdType === 'UNMARK' || cmdType === 'CLEAR') {
-        highlighted.clear();
-        active = null;
+      } else if (t === 'MARK') {
+        if (r !== undefined && c !== undefined && newGrid[r]?.[c]) {
+          newGrid[r][c].status = 'marked';
+          action = `mark [${r}][${c}]`;
+        }
       }
     }
 
-    // Update rows/cols from matrix
-    rows = matrix.length;
-    cols = Math.max(...matrix.map((r) => r.length), 0);
+    setGrid(newGrid);
+    if (action) setActionText(action);
+  }, [currentStepIndex, currentStep, currentStepCommands, findMatrixVar, debugState]);
 
-    // Compute value range for heatmap
-    let min = Infinity;
-    let max = -Infinity;
-    matrix.forEach((row) =>
-      row.forEach((v) => {
-        const num = Number(v);
-        if (!isNaN(num)) {
-          min = Math.min(min, num);
-          max = Math.max(max, num);
-        }
-      })
-    );
-    if (!isFinite(min)) min = 0;
-    if (!isFinite(max)) max = 1;
-
-    // Build cell states
-    const cellGrid: CellState[][] = matrix.map((row, ri) =>
-      row.map((val, ci) => ({
-        value: val,
-        isHighlighted: highlighted.has(`${ri},${ci}`),
-        isActive: active?.[0] === ri && active?.[1] === ci,
-        wasModified: false,
-      }))
-    );
-
-    setGrid(cellGrid);
-    setActiveCell(active);
-    setModifications(modCount);
-  }, [commands, currentFrame]);
-
-  // Compute value range for heatmap coloring
-  const [minVal, maxVal] = useMemo(() => {
-    let min = Infinity;
-    let max = -Infinity;
-    grid.forEach((row) =>
-      row.forEach((cell) => {
-        const num = Number(cell.value);
-        if (!isNaN(num)) {
-          min = Math.min(min, num);
-          max = Math.max(max, num);
-        }
-      })
-    );
-    return [isFinite(min) ? min : 0, isFinite(max) ? max : 1];
-  }, [grid]);
+  const cols = grid[0]?.length ?? 0;
 
   if (grid.length === 0) {
-    return (
-      <Container>
-        <div style={{ color: '#666', fontStyle: 'italic' }}>
-          Matrix visualization will appear here
-        </div>
-      </Container>
-    );
+    return <Container><EmptyMsg>Empty Matrix</EmptyMsg></Container>;
   }
 
   return (
     <Container>
-      {/* Column headers */}
-      <ColLabels>
-        {grid[0]?.map((_, ci) => (
-          <ColLabel key={ci}>{ci}</ColLabel>
-        ))}
+      {/* Column labels */}
+      <ColLabels $cols={cols}>
+        <div />
+        {Array.from({ length: cols }, (_, i) => <ColLabel key={i}>{i}</ColLabel>)}
       </ColLabels>
 
-      <GridWrapper>
-        {grid.map((row, ri) => (
-          <Row key={ri}>
-            <RowLabel>{ri}</RowLabel>
-            {row.map((cell, ci) => {
-              const numVal = Number(cell.value);
-              const bgColor = !isNaN(numVal)
-                ? heatmapColor(numVal, minVal, maxVal)
-                : '#1a1a2e';
+      {/* Grid rows */}
+      {grid.map((row, ri) => (
+        <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+          <RowLabel>{ri}</RowLabel>
+          <Grid $cols={cols}>
+            {row.map((cell, ci) => (
+              <CellBox key={ci} $status={cell.status} $heat={cell.heat}>
+                {cell.value}
+              </CellBox>
+            ))}
+          </Grid>
+        </div>
+      ))}
 
-              return (
-                <CellBase
-                  key={`${ri}-${ci}`}
-                  $isHighlighted={cell.isHighlighted}
-                  $isActive={cell.isActive}
-                  $bgColor={bgColor}
-                >
-                  {cell.value !== 0 ? cell.value : ''}
-                </CellBase>
-              );
-            })}
-          </Row>
-        ))}
-      </GridWrapper>
-
-      <InfoBar>
-        <span>
-          {grid.length}×{grid[0]?.length || 0} matrix
-        </span>
-        <span>{modifications} modifications</span>
-        {activeCell && (
-          <span style={{ color: '#00d4ff' }}>
-            Active: [{activeCell[0]}, {activeCell[1]}]
-          </span>
-        )}
-      </InfoBar>
+      <InfoLabel>Matrix ({grid.length} x {cols})</InfoLabel>
+      {actionText && <ActionLabel>{actionText}</ActionLabel>}
     </Container>
   );
 };

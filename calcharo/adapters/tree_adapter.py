@@ -24,7 +24,7 @@ class TreeAdapter(VisualizationAdapter):
             return False
 
         tree_keywords = [
-            'tree', 'root', 'bst', 'avl', 'trie', 'heap',
+            'tree', 'root', 'bst', 'avl', 'trie',
             'left', 'right', 'children', 'parent', 'binary'
         ]
         for step in execution_steps:

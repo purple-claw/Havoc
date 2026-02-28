@@ -20,7 +20,10 @@ app = FastAPI(
 )
 
 # CORS — let the frontend talk to us without the browser throwing a tantrum
-ALLOWED_ORIGINS = os.getenv("HAVOC_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+ALLOWED_ORIGINS = os.getenv(
+    "HAVOC_CORS_ORIGINS",
+    "http://localhost:5173,http://localhost:3000,http://localhost:3003,https://*.vercel.app"
+).split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -50,6 +53,12 @@ async def root():
         "version": "2.0.0",
         "message": "Hypnotic Algorithm Visualization Of Code — ready to make your code dance",
     }
+
+
+@app.get("/health", tags=["Health"])
+async def health():
+    """Simple health check for Docker/Render health probes."""
+    return {"status": "healthy"}
 
 
 @app.get("/api/health", tags=["Health"])

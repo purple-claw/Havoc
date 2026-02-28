@@ -1,155 +1,188 @@
-// AnimatedQueue — horizontal FIFO visualization with slide physics
-// Elements slide in from the right and exit from the left
+// AnimatedQueue — store-driven horizontal FIFO visualization
+// Rebuilds queue from step variables, decorates with ENQUEUE/DEQUEUE effects
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useSprings, animated } from '@react-spring/web';
-import styled from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
+import { useAnimationStore } from '../stores/animationStore';
 import type { AnimationCommand } from '../types/animation.types';
+
+const slideIn = keyframes`
+  0%   { transform: translateX(50px) scale(0.7); opacity: 0; }
+  60%  { transform: translateX(-3px) scale(1.02); }
+  100% { transform: translateX(0) scale(1); opacity: 1; }
+`;
 
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
   padding: 2rem;
-  min-height: 200px;
+  user-select: none;
 `;
 
 const QueueTrack = styled.div`
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 1rem;
-  border-top: 3px solid #444;
-  border-bottom: 3px solid #444;
+  padding: 1rem 2rem;
+  border-top: 3px solid rgba(255,255,255,0.08);
+  border-bottom: 3px solid rgba(255,255,255,0.08);
   min-width: 200px;
   min-height: 60px;
   position: relative;
+  background: rgba(255,255,255,0.015);
+  border-radius: 2px;
 `;
 
-const DirectionArrow = styled.div<{ $side: 'left' | 'right' }>`
+const Arrow = styled.div<{ $side: 'left' | 'right' }>`
   position: absolute;
-  ${({ $side }) => ($side === 'left' ? 'left: -30px' : 'right: -30px')};
+  ${p => (p.$side === 'left' ? 'left: -36px' : 'right: -36px')};
   top: 50%;
   transform: translateY(-50%);
-  font-size: 1.2rem;
-  color: #888;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary, #666);
 `;
 
-const Label = styled.div`
-  font-size: 0.75rem;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  margin-top: 0.5rem;
-`;
+type ItemStatus = 'idle' | 'enqueuing' | 'dequeuing' | 'highlight' | 'front';
 
-const AnimatedItem = styled(animated.div)<{ $isFront?: boolean; $color?: string }>`
+const statusBg: Record<ItemStatus, string> = {
+  idle: 'rgba(255,255,255,0.06)',
+  enqueuing: 'rgba(0,230,118,0.18)',
+  dequeuing: 'rgba(255,82,82,0.18)',
+  highlight: 'rgba(255,215,64,0.15)',
+  front: 'rgba(79,172,254,0.15)',
+};
+const statusBorder: Record<ItemStatus, string> = {
+  idle: 'rgba(255,255,255,0.08)',
+  enqueuing: 'rgba(0,230,118,0.4)',
+  dequeuing: 'rgba(255,82,82,0.4)',
+  highlight: 'rgba(255,215,64,0.35)',
+  front: 'rgba(79,172,254,0.35)',
+};
+
+const ItemBox = styled(animated.div)<{ $status: ItemStatus }>`
   min-width: 60px;
-  padding: 0.75rem 1rem;
+  padding: 10px 14px;
   text-align: center;
-  font-weight: bold;
-  font-size: 1rem;
-  border-radius: 6px;
-  color: white;
-  background: ${({ $color }) => $color || 'linear-gradient(135deg, #4facfe, #00f2fe)'};
-  box-shadow: ${({ $isFront }) =>
-    $isFront
-      ? '0 0 16px rgba(79, 172, 254, 0.4), 0 4px 12px rgba(0,0,0,0.3)'
-      : '0 2px 8px rgba(0,0,0,0.2)'};
-  user-select: none;
+  font-weight: 700;
+  font-size: 14px;
+  font-family: var(--font-mono, monospace);
+  border-radius: 8px;
+  color: var(--text-primary, #e0e0e0);
+  background: ${p => statusBg[p.$status]};
+  border: 1px solid ${p => statusBorder[p.$status]};
+  transition: background 0.25s, border-color 0.25s;
   white-space: nowrap;
+  ${p => p.$status === 'enqueuing' && css`animation: ${slideIn} 0.4s ease-out;`}
 `;
 
-const COLORS = [
-  'linear-gradient(135deg, #4facfe, #00f2fe)',
-  'linear-gradient(135deg, #43e97b, #38f9d7)',
-  'linear-gradient(135deg, #fa709a, #fee140)',
-  'linear-gradient(135deg, #a18cd1, #fbc2eb)',
-  'linear-gradient(135deg, #fccb90, #d57eeb)',
-  'linear-gradient(135deg, #667eea, #764ba2)',
-];
+const InfoLabel = styled.div`
+  font-size: 11px;
+  color: var(--text-tertiary, #666);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-top: 10px;
+`;
 
-interface QueueItem {
-  id: string;
-  value: any;
-  color: string;
-}
+const ActionLabel = styled.div`
+  margin-top: 6px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--accent-cyan, #18ffff);
+`;
 
-interface AnimatedQueueProps {
-  commands: AnimationCommand[];
-  currentFrame: number;
-  speed: number;
-}
+const EmptyMsg = styled.div`
+  color: var(--text-tertiary, #555);
+  font-style: italic;
+  padding: 1rem 2rem;
+  font-size: 13px;
+`;
 
-const AnimatedQueue: React.FC<AnimatedQueueProps> = ({ commands, currentFrame, speed }) => {
-  const [items, setItems] = useState<QueueItem[]>([]);
-  const [lastAction, setLastAction] = useState('');
+interface QueueItemState { value: string; status: ItemStatus; }
+
+const AnimatedQueue: React.FC = () => {
+  const { currentStepIndex, currentStep, debugState, vizData } = useAnimationStore();
+  const currentStepCommands: AnimationCommand[] = useAnimationStore(
+    s => (s as any).currentStepCommands ?? []
+  );
+
+  const [items, setItems] = useState<QueueItemState[]>([]);
+  const [actionText, setActionText] = useState('');
+
+  const findQueueVar = useCallback((vars: Record<string, any>): any[] | null => {
+    if (!vars) return null;
+    const ds = vizData?.visualizer_config?.data_structures;
+    const hints = [...(ds?.arrays ?? [])];
+    const names = ['queue', 'q', 'fifo', 'bfs_queue', 'frontier', 'deque', 'pq', 'priority'];
+    for (const n of [...hints, ...names]) {
+      if (Array.isArray(vars[n])) return vars[n];
+    }
+    for (const v of Object.values(vars)) {
+      if (Array.isArray(v)) return v;
+    }
+    return null;
+  }, [vizData]);
 
   useEffect(() => {
-    const newItems: QueueItem[] = [];
-    let colorIdx = 0;
+    if (currentStepIndex < 0 || !currentStep) {
+      if (debugState === 'idle' || debugState === 'ready') { setItems([]); setActionText(''); }
+      return;
+    }
 
-    for (let i = 0; i <= Math.min(currentFrame, commands.length - 1); i++) {
-      const cmd = commands[i];
-      if (!cmd) continue;
+    const arr = findQueueVar(currentStep.variables);
+    if (!arr) return;
 
-      const cmdType = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
+    const newItems: QueueItemState[] = arr.map((v: any, i: number) => ({
+      value: typeof v === 'object' ? JSON.stringify(v) : String(v),
+      status: (i === 0 ? 'front' : 'idle') as ItemStatus,
+    }));
 
-      if (cmdType === 'ENQUEUE' || cmdType === 'PUSH' || cmdType === 'CREATE') {
-        newItems.push({
-          id: `q-${i}-${cmd.value ?? cmd.target}`,
-          value: cmd.value ?? cmd.target,
-          color: COLORS[colorIdx++ % COLORS.length],
-        });
-        setLastAction(`enqueue(${cmd.value ?? cmd.target})`);
-      } else if (cmdType === 'DEQUEUE' || cmdType === 'POP' || cmdType === 'DELETE') {
-        if (newItems.length > 0) {
-          const removed = newItems.shift();
-          setLastAction(`dequeue() → ${removed?.value}`);
-        }
+    let action = '';
+    for (const cmd of currentStepCommands) {
+      const t = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
+      if (t === 'ENQUEUE' || t === 'PUSH' || t === 'CREATE') {
+        if (newItems.length > 0) newItems[newItems.length - 1].status = 'enqueuing';
+        action = `enqueue(${cmd.values?.value ?? ''})`;
+      } else if (t === 'DEQUEUE' || t === 'POP' || t === 'DELETE') {
+        action = `dequeue() -> ${cmd.values?.value ?? ''}`;
+      } else if (t === 'HIGHLIGHT') {
+        const indices: number[] = (cmd as any).indices ?? [];
+        for (const i of indices) { if (newItems[i]) newItems[i].status = 'highlight'; }
       }
     }
 
     setItems(newItems);
-  }, [commands, currentFrame]);
+    if (action) setActionText(action);
+  }, [currentStepIndex, currentStep, currentStepCommands, findQueueVar, debugState]);
 
   const springs = useSprings(
     items.length,
-    items.map((_, i) => ({
-      opacity: 1,
-      transform: 'translateX(0px) scale(1)',
-      from: { opacity: 0, transform: 'translateX(80px) scale(0.5)' },
+    items.map(() => ({
+      opacity: 1, transform: 'translateX(0px)',
       config: { tension: 180, friction: 24 },
+      from: { opacity: 0.5, transform: 'translateX(30px)' },
     }))
   );
 
   return (
     <Container>
       <QueueTrack>
-        <DirectionArrow $side="left">← out</DirectionArrow>
-        {springs.map((style, i) => (
-          <AnimatedItem
-            key={items[i]?.id || i}
-            style={style}
-            $isFront={i === 0}
-            $color={items[i]?.color}
-          >
-            {items[i]?.value}
-          </AnimatedItem>
-        ))}
-        {items.length === 0 && (
-          <div style={{ color: '#666', fontStyle: 'italic', padding: '1rem' }}>
-            Empty Queue
-          </div>
-        )}
-        <DirectionArrow $side="right">in →</DirectionArrow>
+        <Arrow $side="left">{'<-'} out</Arrow>
+        {springs.map((style, i) => {
+          const item = items[i];
+          if (!item) return null;
+          return <ItemBox key={i} style={style} $status={item.status}>{item.value}</ItemBox>;
+        })}
+        {items.length === 0 && <EmptyMsg>Empty Queue</EmptyMsg>}
+        <Arrow $side="right">in {'->'}  </Arrow>
       </QueueTrack>
-      <Label>QUEUE ({items.length} items) — FIFO</Label>
-      {lastAction && (
-        <div style={{ marginTop: '0.5rem', color: '#4facfe', fontSize: '0.85rem' }}>
-          Last: {lastAction}
-        </div>
-      )}
+      <InfoLabel>Queue ({items.length} items) - FIFO</InfoLabel>
+      {actionText && <ActionLabel>{actionText}</ActionLabel>}
     </Container>
   );
 };

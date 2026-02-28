@@ -1,195 +1,225 @@
-// AnimatedLinkedList — node-and-pointer visualization
-// Nodes appear with spring-in, arrows animate between them, traversal pulses through
+// AnimatedLinkedList — store-driven node-and-pointer visualization
+// Rebuilds list from step variables, applies VISIT/TRAVERSE/CREATE effects
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useSprings, animated } from '@react-spring/web';
-import styled from 'styled-components';
+import styled, { css, keyframes } from 'styled-components';
+import { useAnimationStore } from '../stores/animationStore';
 import type { AnimationCommand } from '../types/animation.types';
+
+const pulseGlow = keyframes`
+  0%   { box-shadow: 0 0 0 0 rgba(24,255,255,0.4); }
+  50%  { box-shadow: 0 0 14px 4px rgba(24,255,255,0.2); }
+  100% { box-shadow: 0 0 0 0 rgba(24,255,255,0); }
+`;
 
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
   padding: 2rem;
   overflow-x: auto;
-  min-height: 200px;
+  user-select: none;
 `;
 
 const ListTrack = styled.div`
   display: flex;
   align-items: center;
-  gap: 0;
   padding: 1rem 2rem;
 `;
 
-const NodeBox = styled(animated.div)<{ $isVisited?: boolean; $isHighlighted?: boolean }>`
+type NodeStatus = 'idle' | 'visited' | 'highlight' | 'creating' | 'deleting';
+
+const statusBg: Record<NodeStatus, string> = {
+  idle: 'rgba(102,126,234,0.2)',
+  visited: 'rgba(0,230,118,0.25)',
+  highlight: 'rgba(24,255,255,0.2)',
+  creating: 'rgba(0,230,118,0.3)',
+  deleting: 'rgba(255,82,82,0.25)',
+};
+const statusBorder: Record<NodeStatus, string> = {
+  idle: 'rgba(102,126,234,0.3)',
+  visited: 'rgba(0,230,118,0.5)',
+  highlight: 'rgba(24,255,255,0.5)',
+  creating: 'rgba(0,230,118,0.6)',
+  deleting: 'rgba(255,82,82,0.5)',
+};
+
+const NodeGroup = styled(animated.div)`
   display: flex;
   align-items: center;
-  gap: 0;
 `;
 
-const DataBox = styled.div<{ $color?: string; $isHighlighted?: boolean }>`
-  min-width: 56px;
-  height: 48px;
+const DataCell = styled.div<{ $status: NodeStatus }>`
+  min-width: 52px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: bold;
-  font-size: 1rem;
-  color: white;
-  background: ${({ $color }) => $color || '#667eea'};
-  border-radius: 6px 0 0 6px;
-  border: 2px solid ${({ $isHighlighted }) => ($isHighlighted ? '#00d4ff' : '#444')};
-  border-right: 1px solid #444;
-  box-shadow: ${({ $isHighlighted }) =>
-    $isHighlighted ? '0 0 16px rgba(0, 212, 255, 0.4)' : 'none'};
+  font-weight: 700;
+  font-size: 14px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary, #e0e0e0);
+  background: ${p => statusBg[p.$status]};
+  border-radius: 8px 0 0 8px;
+  border: 1px solid ${p => statusBorder[p.$status]};
+  border-right: none;
+  transition: background 0.25s, border-color 0.25s;
+  ${p => p.$status === 'highlight' && css`animation: ${pulseGlow} 0.7s ease-out;`}
 `;
 
-const PointerBox = styled.div<{ $isNull?: boolean }>`
-  width: 28px;
-  height: 48px;
+const PtrCell = styled.div<{ $isNull?: boolean }>`
+  width: 26px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.7rem;
-  color: ${({ $isNull }) => ($isNull ? '#e94560' : '#888')};
-  background: #1a1a2e;
-  border-radius: 0 6px 6px 0;
-  border: 2px solid #444;
+  font-size: 11px;
+  color: ${p => p.$isNull ? 'var(--accent-red, #ff5252)' : 'var(--text-tertiary, #888)'};
+  background: rgba(255,255,255,0.03);
+  border-radius: 0 8px 8px 0;
+  border: 1px solid rgba(255,255,255,0.08);
   border-left: 0;
 `;
 
-const Arrow = styled.div<{ $isTraversed?: boolean }>`
-  width: 32px;
+const ArrowLine = styled.div<{ $traversed?: boolean }>`
+  width: 28px;
   height: 2px;
-  background: ${({ $isTraversed }) => ($isTraversed ? '#43e97b' : '#555')};
+  background: ${p => p.$traversed ? 'var(--accent-green, #00e676)' : 'rgba(255,255,255,0.15)'};
   position: relative;
   margin: 0 2px;
-
+  transition: background 0.3s;
   &::after {
     content: '';
     position: absolute;
-    right: -6px;
+    right: -5px;
     top: -4px;
-    width: 0;
-    height: 0;
-    border-left: 8px solid ${({ $isTraversed }) => ($isTraversed ? '#43e97b' : '#555')};
+    border-left: 7px solid ${p => p.$traversed ? 'var(--accent-green, #00e676)' : 'rgba(255,255,255,0.15)'};
     border-top: 5px solid transparent;
     border-bottom: 5px solid transparent;
   }
 `;
 
-const NullTerminator = styled.div`
+const NullBox = styled.div`
   width: 24px;
-  height: 48px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1a1a2e;
-  border: 2px solid #e94560;
+  background: rgba(255,82,82,0.08);
+  border: 1px solid rgba(255,82,82,0.25);
   border-radius: 6px;
-  color: #e94560;
-  font-size: 0.6rem;
-  font-weight: bold;
+  color: var(--accent-red, #ff5252);
+  font-size: 8px;
+  font-weight: 700;
 `;
 
-const Label = styled.div`
-  font-size: 0.75rem;
-  color: #888;
-  letter-spacing: 2px;
-  margin-top: 0.5rem;
+const InfoLabel = styled.div`
+  font-size: 11px;
+  color: var(--text-tertiary, #666);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-top: 10px;
 `;
 
-const COLORS = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a'];
+const ActionLabel = styled.div`
+  margin-top: 6px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--accent-cyan, #18ffff);
+`;
 
-interface ListNode {
-  id: string;
-  value: any;
-  color: string;
-  isVisited: boolean;
-  isHighlighted: boolean;
-}
+const EmptyMsg = styled.div`
+  color: var(--text-tertiary, #555);
+  font-style: italic;
+  font-size: 13px;
+`;
 
-interface AnimatedLinkedListProps {
-  commands: AnimationCommand[];
-  currentFrame: number;
-  speed: number;
-}
+interface ListNodeState { value: string; status: NodeStatus; traversed: boolean; }
 
-const AnimatedLinkedList: React.FC<AnimatedLinkedListProps> = ({
-  commands,
-  currentFrame,
-  speed,
-}) => {
-  const [nodes, setNodes] = useState<ListNode[]>([]);
-  const [lastAction, setLastAction] = useState('');
+const AnimatedLinkedList: React.FC = () => {
+  const { currentStepIndex, currentStep, debugState, vizData } = useAnimationStore();
+  const currentStepCommands: AnimationCommand[] = useAnimationStore(
+    s => (s as any).currentStepCommands ?? []
+  );
+
+  const [nodes, setNodes] = useState<ListNodeState[]>([]);
+  const [actionText, setActionText] = useState('');
+
+  const findListVar = useCallback((vars: Record<string, any>): any[] | null => {
+    if (!vars) return null;
+    const ds = vizData?.visualizer_config?.data_structures;
+    const hints = [...(ds?.arrays ?? [])];
+    const names = ['linked_list', 'list', 'll', 'nodes', 'head'];
+    for (const n of [...hints, ...names]) {
+      if (Array.isArray(vars[n])) return vars[n];
+    }
+    // Try to find a list variable
+    for (const v of Object.values(vars)) {
+      if (Array.isArray(v)) return v;
+    }
+    return null;
+  }, [vizData]);
 
   useEffect(() => {
-    const list: ListNode[] = [];
-    const visitedSet = new Set<string>();
-    let highlightedId: string | null = null;
-    let colorIdx = 0;
+    if (currentStepIndex < 0 || !currentStep) {
+      if (debugState === 'idle' || debugState === 'ready') { setNodes([]); setActionText(''); }
+      return;
+    }
 
-    for (let i = 0; i <= Math.min(currentFrame, commands.length - 1); i++) {
-      const cmd = commands[i];
-      if (!cmd) continue;
+    const arr = findListVar(currentStep.variables);
+    if (!arr) return;
 
-      const cmdType = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
-      const target = String(cmd.target ?? '');
-      const meta = cmd.metadata || {};
+    const newNodes: ListNodeState[] = arr.map((v: any) => ({
+      value: typeof v === 'object' ? JSON.stringify(v) : String(v),
+      status: 'idle' as NodeStatus,
+      traversed: false,
+    }));
 
-      if (cmdType === 'CREATE' || cmdType.includes('INSERT')) {
-        const nodeId = target || `node_${i}`;
-        const position = meta.position ?? list.length; // Default: append
-        const node: ListNode = {
-          id: nodeId,
-          value: cmd.value ?? nodeId,
-          color: COLORS[colorIdx++ % COLORS.length],
-          isVisited: false,
-          isHighlighted: false,
-        };
+    // Apply command visual effects
+    let action = '';
+    for (const cmd of currentStepCommands) {
+      const t = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
+      const indices: number[] = (cmd as any).indices ?? [];
+      const ids: string[] = (cmd as any).ids ?? [];
 
-        if (position >= list.length) {
-          list.push(node);
-        } else {
-          list.splice(position, 0, node);
+      if (t === 'CREATE') {
+        const pos = cmd.values?.position ?? cmd.metadata?.position;
+        if (pos !== undefined && newNodes[pos]) newNodes[pos].status = 'creating';
+        else if (newNodes.length > 0) newNodes[newNodes.length - 1].status = 'creating';
+        action = `insert(${cmd.values?.value ?? ''})`;
+      } else if (t === 'DELETE') {
+        action = `delete(${cmd.values?.value ?? ''})`;
+      } else if (t === 'VISIT' || t === 'TRAVERSE') {
+        for (const i of indices) {
+          if (newNodes[i]) { newNodes[i].status = 'visited'; newNodes[i].traversed = true; }
         }
-        setLastAction(`insert(${node.value})`);
-      } else if (cmdType === 'DELETE') {
-        const idx = list.findIndex((n) => n.id === target);
-        if (idx >= 0) {
-          setLastAction(`delete(${list[idx].value})`);
-          list.splice(idx, 1);
-        } else if (list.length > 0) {
-          const removed = list.pop();
-          setLastAction(`delete(${removed?.value})`);
+        // Mark by id too
+        for (let i = 0; i < Math.min(ids.length, newNodes.length); i++) {
+          newNodes[i].status = 'visited';
+          newNodes[i].traversed = true;
         }
-      } else if (cmdType === 'VISIT' || cmdType === 'TRAVERSE') {
-        visitedSet.add(target);
-        highlightedId = target;
-      } else if (cmdType === 'HIGHLIGHT') {
-        highlightedId = target;
-      } else if (cmdType === 'UNMARK') {
-        highlightedId = null;
+        action = t === 'TRAVERSE' ? 'traverse' : 'visit';
+      } else if (t === 'HIGHLIGHT') {
+        for (const i of indices) {
+          if (newNodes[i]) newNodes[i].status = 'highlight';
+        }
       }
     }
 
-    // Apply states
-    list.forEach((n) => {
-      n.isVisited = visitedSet.has(n.id);
-      n.isHighlighted = n.id === highlightedId;
-    });
-
-    setNodes(list);
-  }, [commands, currentFrame]);
+    setNodes(newNodes);
+    if (action) setActionText(action);
+  }, [currentStepIndex, currentStep, currentStepCommands, findListVar, debugState]);
 
   const springs = useSprings(
     nodes.length,
     nodes.map(() => ({
-      opacity: 1,
-      transform: 'scale(1)',
-      from: { opacity: 0, transform: 'scale(0.3)' },
+      opacity: 1, transform: 'scale(1)',
       config: { tension: 160, friction: 28 },
+      from: { opacity: 0.5, transform: 'scale(0.8)' },
     }))
   );
 
@@ -199,35 +229,23 @@ const AnimatedLinkedList: React.FC<AnimatedLinkedListProps> = ({
         {springs.map((style, i) => {
           const node = nodes[i];
           if (!node) return null;
-
           return (
-            <React.Fragment key={node.id}>
-              <NodeBox style={style}>
-                <DataBox
-                  $color={node.isVisited ? '#43e97b' : node.color}
-                  $isHighlighted={node.isHighlighted}
-                >
-                  {node.value}
-                </DataBox>
-                <PointerBox $isNull={i === nodes.length - 1}>
-                  {i === nodes.length - 1 ? '∅' : '→'}
-                </PointerBox>
-              </NodeBox>
-              {i < nodes.length - 1 && <Arrow $isTraversed={node.isVisited} />}
+            <React.Fragment key={i}>
+              <NodeGroup style={style}>
+                <DataCell $status={node.status}>{node.value}</DataCell>
+                <PtrCell $isNull={i === nodes.length - 1}>
+                  {i === nodes.length - 1 ? '/' : '>'}
+                </PtrCell>
+              </NodeGroup>
+              {i < nodes.length - 1 && <ArrowLine $traversed={node.traversed} />}
             </React.Fragment>
           );
         })}
-        {nodes.length > 0 && <NullTerminator>NULL</NullTerminator>}
-        {nodes.length === 0 && (
-          <div style={{ color: '#666', fontStyle: 'italic' }}>Empty Linked List</div>
-        )}
+        {nodes.length > 0 && <NullBox>NULL</NullBox>}
+        {nodes.length === 0 && <EmptyMsg>Empty Linked List</EmptyMsg>}
       </ListTrack>
-      <Label>LINKED LIST ({nodes.length} nodes)</Label>
-      {lastAction && (
-        <div style={{ marginTop: '0.5rem', color: '#667eea', fontSize: '0.85rem' }}>
-          Last: {lastAction}
-        </div>
-      )}
+      <InfoLabel>Linked List ({nodes.length} nodes)</InfoLabel>
+      {actionText && <ActionLabel>{actionText}</ActionLabel>}
     </Container>
   );
 };

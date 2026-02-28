@@ -1,166 +1,189 @@
-// AnimatedStack — vertical LIFO visualization with spring physics
-// Elements drop in from the top and fly out when popped
+// AnimatedStack — store-driven vertical LIFO visualization
+// Rebuilds stack state from step variables, decorates with PUSH/POP command effects
 
-import React, { useState, useEffect } from 'react';
-import { animated, useSprings } from '@react-spring/web';
-import styled from 'styled-components';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useSprings, animated } from '@react-spring/web';
+import styled, { keyframes, css } from 'styled-components';
+import { useAnimationStore } from '../stores/animationStore';
 import type { AnimationCommand } from '../types/animation.types';
+
+const dropIn = keyframes`
+  0%   { transform: translateY(-40px) scale(0.7); opacity: 0; }
+  60%  { transform: translateY(4px) scale(1.04); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+`;
 
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
   padding: 2rem;
-  min-height: 400px;
-  position: relative;
+  user-select: none;
 `;
 
-const StackContainer = styled.div`
+const StackColumn = styled.div`
   display: flex;
   flex-direction: column-reverse;
   align-items: center;
   gap: 4px;
-  padding: 1rem;
-  border-left: 3px solid #444;
-  border-right: 3px solid #444;
-  border-bottom: 3px solid #444;
-  border-radius: 0 0 8px 8px;
-  min-width: 120px;
-  min-height: 60px;
+  padding: 1rem 1.5rem;
+  border-left: 3px solid rgba(255,255,255,0.08);
+  border-right: 3px solid rgba(255,255,255,0.08);
+  border-bottom: 3px solid rgba(255,255,255,0.08);
+  border-radius: 0 0 10px 10px;
+  min-width: 140px;
+  min-height: 80px;
   position: relative;
+  background: rgba(255,255,255,0.015);
 `;
 
-const StackLabel = styled.div`
-  font-size: 0.75rem;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  margin-top: 0.5rem;
-`;
-
-const TopIndicator = styled.div`
+const TopBadge = styled.div`
   position: absolute;
-  top: -24px;
+  top: -22px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.7rem;
-  color: #00d4ff;
-  font-weight: bold;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent-cyan, #18ffff);
+  letter-spacing: 1px;
 `;
 
-const AnimatedItem = styled(animated.div)<{ $isTop?: boolean; $color?: string }>`
-  width: 100px;
-  padding: 0.75rem 1rem;
+type ItemStatus = 'idle' | 'pushing' | 'popping' | 'highlight' | 'top';
+
+const statusBg: Record<ItemStatus, string> = {
+  idle: 'rgba(255,255,255,0.06)',
+  pushing: 'rgba(0,230,118,0.18)',
+  popping: 'rgba(255,82,82,0.18)',
+  highlight: 'rgba(255,215,64,0.15)',
+  top: 'rgba(24,255,255,0.12)',
+};
+const statusBorder: Record<ItemStatus, string> = {
+  idle: 'rgba(255,255,255,0.08)',
+  pushing: 'rgba(0,230,118,0.4)',
+  popping: 'rgba(255,82,82,0.4)',
+  highlight: 'rgba(255,215,64,0.35)',
+  top: 'rgba(24,255,255,0.3)',
+};
+
+const ItemBox = styled(animated.div)<{ $status: ItemStatus }>`
+  width: 120px;
+  padding: 10px 14px;
   text-align: center;
-  font-weight: bold;
-  font-size: 1rem;
-  border-radius: 6px;
-  color: white;
-  background: ${({ $color }) => $color || 'linear-gradient(135deg, #667eea, #764ba2)'};
-  box-shadow: ${({ $isTop }) =>
-    $isTop
-      ? '0 0 20px rgba(102, 126, 234, 0.5), 0 4px 12px rgba(0,0,0,0.3)'
-      : '0 2px 8px rgba(0,0,0,0.2)'};
-  cursor: default;
-  user-select: none;
+  font-weight: 700;
+  font-size: 14px;
+  font-family: var(--font-mono, monospace);
+  border-radius: 8px;
+  color: var(--text-primary, #e0e0e0);
+  background: ${p => statusBg[p.$status]};
+  border: 1px solid ${p => statusBorder[p.$status]};
+  transition: background 0.25s, border-color 0.25s;
+  ${p => p.$status === 'pushing' && css`animation: ${dropIn} 0.4s ease-out;`}
 `;
 
-interface StackItem {
-  id: string;
-  value: any;
-  color: string;
-}
+const InfoLabel = styled.div`
+  font-size: 11px;
+  color: var(--text-tertiary, #666);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-top: 10px;
+`;
 
-const COLORS = [
-  'linear-gradient(135deg, #667eea, #764ba2)',
-  'linear-gradient(135deg, #f093fb, #f5576c)',
-  'linear-gradient(135deg, #4facfe, #00f2fe)',
-  'linear-gradient(135deg, #43e97b, #38f9d7)',
-  'linear-gradient(135deg, #fa709a, #fee140)',
-  'linear-gradient(135deg, #a18cd1, #fbc2eb)',
-  'linear-gradient(135deg, #fccb90, #d57eeb)',
-  'linear-gradient(135deg, #e0c3fc, #8ec5fc)',
-];
+const ActionLabel = styled.div`
+  margin-top: 6px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--accent-cyan, #18ffff);
+`;
 
-interface AnimatedStackProps {
-  commands: AnimationCommand[];
-  currentFrame: number;
-  speed: number;
-}
+const EmptyMsg = styled.div`
+  color: var(--text-tertiary, #555);
+  font-style: italic;
+  padding: 2rem;
+  font-size: 13px;
+`;
 
-const AnimatedStack: React.FC<AnimatedStackProps> = ({ commands, currentFrame, speed }) => {
-  const [items, setItems] = useState<StackItem[]>([]);
-  const [highlightIndex, setHighlightIndex] = useState<number | null>(null);
-  const [lastAction, setLastAction] = useState<string>('');
+interface StackItemState { value: string; status: ItemStatus; }
 
-  // Process commands up to current frame
+const AnimatedStack: React.FC = () => {
+  const { currentStepIndex, currentStep, debugState, vizData } = useAnimationStore();
+  const currentStepCommands: AnimationCommand[] = useAnimationStore(
+    s => (s as any).currentStepCommands ?? []
+  );
+
+  const [items, setItems] = useState<StackItemState[]>([]);
+  const [actionText, setActionText] = useState('');
+
+  const findStackVar = useCallback((vars: Record<string, any>): any[] | null => {
+    if (!vars) return null;
+    const ds = vizData?.visualizer_config?.data_structures;
+    const hints = [...(ds?.arrays ?? [])];
+    const names = ['stack', 'stk', 'call_stack', 'undo', 'history', 's'];
+    for (const n of [...hints, ...names]) {
+      if (Array.isArray(vars[n])) return vars[n];
+    }
+    for (const v of Object.values(vars)) {
+      if (Array.isArray(v)) return v;
+    }
+    return null;
+  }, [vizData]);
+
   useEffect(() => {
-    const newItems: StackItem[] = [];
-    let colorIdx = 0;
+    if (currentStepIndex < 0 || !currentStep) {
+      if (debugState === 'idle' || debugState === 'ready') { setItems([]); setActionText(''); }
+      return;
+    }
 
-    for (let i = 0; i <= Math.min(currentFrame, commands.length - 1); i++) {
-      const cmd = commands[i];
-      if (!cmd) continue;
+    const arr = findStackVar(currentStep.variables);
+    if (!arr) return;
 
-      const cmdType = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
+    const newItems: StackItemState[] = arr.map((v: any, i: number) => ({
+      value: typeof v === 'object' ? JSON.stringify(v) : String(v),
+      status: (i === arr.length - 1 ? 'top' : 'idle') as ItemStatus,
+    }));
 
-      if (cmdType === 'PUSH' || cmdType === 'CREATE') {
-        newItems.push({
-          id: `item-${i}-${cmd.value ?? cmd.target}`,
-          value: cmd.value ?? cmd.target,
-          color: COLORS[colorIdx++ % COLORS.length],
-        });
-        setLastAction(`push(${cmd.value ?? cmd.target})`);
-      } else if (cmdType === 'POP' || cmdType === 'DELETE') {
-        if (newItems.length > 0) {
-          const popped = newItems.pop();
-          setLastAction(`pop() → ${popped?.value}`);
-        }
-      } else if (cmdType === 'HIGHLIGHT' || cmdType === 'VISIT') {
-        setHighlightIndex(newItems.length - 1);
+    let action = '';
+    for (const cmd of currentStepCommands) {
+      const t = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
+      if (t === 'PUSH' || t === 'CREATE') {
+        if (newItems.length > 0) newItems[newItems.length - 1].status = 'pushing';
+        action = `push(${cmd.values?.value ?? ''})`;
+      } else if (t === 'POP' || t === 'DELETE') {
+        action = `pop() -> ${cmd.values?.value ?? ''}`;
+      } else if (t === 'HIGHLIGHT' || t === 'VISIT') {
+        const indices: number[] = (cmd as any).indices ?? [];
+        for (const i of indices) { if (newItems[i]) newItems[i].status = 'highlight'; }
       }
     }
 
     setItems(newItems);
-  }, [commands, currentFrame]);
+    if (action) setActionText(action);
+  }, [currentStepIndex, currentStep, currentStepCommands, findStackVar, debugState]);
 
-  // Spring animations for each item
   const springs = useSprings(
     items.length,
-    items.map((_, i) => ({
-      opacity: 1,
-      transform: 'translateY(0px) scale(1)',
-      from: { opacity: 0, transform: 'translateY(-50px) scale(0.5)' },
+    items.map(() => ({
+      opacity: 1, transform: 'translateY(0px)',
       config: { tension: 250, friction: 22 },
+      from: { opacity: 0.5, transform: 'translateY(-20px)' },
     }))
   );
 
   return (
     <Container>
-      <TopIndicator>↓ TOP</TopIndicator>
-      <StackContainer>
-        {springs.map((style, i) => (
-          <AnimatedItem
-            key={items[i]?.id || i}
-            style={style}
-            $isTop={i === items.length - 1}
-            $color={items[i]?.color}
-          >
-            {items[i]?.value}
-          </AnimatedItem>
-        ))}
-        {items.length === 0 && (
-          <div style={{ color: '#666', fontStyle: 'italic', padding: '2rem' }}>
-            Empty Stack
-          </div>
-        )}
-      </StackContainer>
-      <StackLabel>STACK ({items.length} items)</StackLabel>
-      {lastAction && (
-        <div style={{ marginTop: '0.5rem', color: '#00d4ff', fontSize: '0.85rem' }}>
-          Last: {lastAction}
-        </div>
-      )}
+      <TopBadge>{'\\u2193'} TOP</TopBadge>
+      <StackColumn>
+        {springs.map((style, i) => {
+          const item = items[i];
+          if (!item) return null;
+          return <ItemBox key={i} style={style} $status={item.status}>{item.value}</ItemBox>;
+        })}
+        {items.length === 0 && <EmptyMsg>Empty Stack</EmptyMsg>}
+      </StackColumn>
+      <InfoLabel>Stack ({items.length} items)</InfoLabel>
+      {actionText && <ActionLabel>{actionText}</ActionLabel>}
     </Container>
   );
 };

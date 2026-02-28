@@ -19,17 +19,22 @@ from calcharo.core.models import ExecutionStep
 
 
 # Priority order: specialized adapters first, generic last
+# Key ordering rationale:
+#   HeapAdapter before TreeAdapter (heaps are specialized lists; tree keyword 'heap' removed)
+#   HashMapAdapter before GraphAdapter (simple dicts → maps, not graphs)
+#   GraphAdapter before LinkedListAdapter (dict-of-lists → graph, not linked list)
+#   MatrixAdapter before ArrayAdapter (2D arrays are more specific)
 ADAPTER_PRIORITY: List[Type[VisualizationAdapter]] = [
+    HeapAdapter,         # Heaps before trees (heaps use lists, very specific)
     TreeAdapter,         # Trees before graphs (trees are a subset of graphs)
-    HeapAdapter,         # Heaps before arrays (heaps are specialized arrays)
     MatrixAdapter,       # 2D arrays before 1D arrays
-    GraphAdapter,        # Graphs use dicts, check before HashMap
+    HashMapAdapter,      # Dictionary/hash map operations (before graph to avoid false positives)
+    GraphAdapter,        # Graphs use dicts-of-lists — after HashMap which excludes graph-like shapes
     LinkedListAdapter,   # Linked lists use dicts with 'next' pointer
     StackAdapter,        # Stack before generic array
     QueueAdapter,        # Queue before generic array
     ArrayAdapter,        # General array operations
     SetAdapter,          # Set operations
-    HashMapAdapter,      # Dictionary/hash map operations
     StringAdapter,       # String manipulations
     GenericAdapter,      # The catch-all safety net (always matches)
 ]

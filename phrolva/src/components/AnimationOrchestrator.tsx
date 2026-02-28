@@ -123,7 +123,6 @@ export const AnimationOrchestrator: React.FC<AnimationOrchestratorProps> = ({
   const {
     vizData: storeData,
     loadVisualization,
-    playbackState,
     currentStepIndex,
     totalSteps,
   } = useAnimationStore();
@@ -161,13 +160,8 @@ export const AnimationOrchestrator: React.FC<AnimationOrchestratorProps> = ({
     return 'AnimatedGeneric';
   }, [visualizationData]);
 
-  const commands = visualizationData?.animations.commands ?? [];
-  const currentFrame = playbackState.currentFrame;
-  const speed = playbackState.speed;
-
   const renderViz = useCallback(() => {
     if (!visualizationData) return null;
-    const shared = { commands, currentFrame, speed };
     switch (resolved) {
       case 'AnimatedArray': {
         // Extract initial array from the first step that has an array variable
@@ -177,13 +171,11 @@ export const AnimationOrchestrator: React.FC<AnimationOrchestratorProps> = ({
         let init: number[] = [64, 34, 25, 12, 22, 11, 90]; // fallback
         for (const s of steps) {
           const vars = s.variables ?? {};
-          // Try the detected variable name first
           if (arrVarName && Array.isArray(vars[arrVarName])) {
             init = vars[arrVarName];
             break;
           }
-          // Otherwise find the first array-typed variable
-          for (const [k, v] of Object.entries(vars)) {
+          for (const [, v] of Object.entries(vars)) {
             if (Array.isArray(v) && v.length > 0 && typeof v[0] === 'number') {
               init = v as number[];
               break;
@@ -193,19 +185,19 @@ export const AnimationOrchestrator: React.FC<AnimationOrchestratorProps> = ({
         }
         return <AnimatedArray initialArray={init} />;
       }
-      case 'AnimatedGraph': return <AnimatedGraph />;
-      case 'AnimatedString': return <AnimatedString />;
-      case 'AnimatedStack': return <AnimatedStack {...shared} />;
-      case 'AnimatedQueue': return <AnimatedQueue {...shared} />;
-      case 'AnimatedLinkedList': return <AnimatedLinkedList {...shared} />;
-      case 'AnimatedTree': return <AnimatedTree {...shared} />;
-      case 'AnimatedHeap': return <AnimatedHeap {...shared} />;
-      case 'AnimatedMatrix': return <AnimatedMatrix {...shared} />;
-      case 'AnimatedHashMap': return <AnimatedHashMap {...shared} />;
-      case 'AnimatedSet': return <AnimatedSet {...shared} />;
-      default: return <AnimatedGeneric {...shared} />;
+      case 'AnimatedGraph':      return <AnimatedGraph />;
+      case 'AnimatedString':     return <AnimatedString />;
+      case 'AnimatedStack':      return <AnimatedStack />;
+      case 'AnimatedQueue':      return <AnimatedQueue />;
+      case 'AnimatedLinkedList': return <AnimatedLinkedList />;
+      case 'AnimatedTree':       return <AnimatedTree />;
+      case 'AnimatedHeap':       return <AnimatedHeap />;
+      case 'AnimatedMatrix':     return <AnimatedMatrix />;
+      case 'AnimatedHashMap':    return <AnimatedHashMap />;
+      case 'AnimatedSet':        return <AnimatedSet />;
+      default:                   return <AnimatedGeneric />;
     }
-  }, [visualizationData, resolved, commands, currentFrame, speed]);
+  }, [visualizationData, resolved]);
 
   if (loading) {
     return (

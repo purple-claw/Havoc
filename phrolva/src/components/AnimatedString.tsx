@@ -1,188 +1,240 @@
-// AnimatedString - Character-by-character animations for string operations
-// Letters that dance, flip, and transform
+// AnimatedString — store-driven character-by-character string visualization
+// Rebuilds string from step variables, applies HIGHLIGHT/COMPARE/SET_VALUE effects
 
-import React, { useState, useEffect } from 'react';
-import styled from 'styled-components';
-import { animated, useSpring } from '@react-spring/web';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useSprings, animated } from '@react-spring/web';
+import styled, { keyframes, css } from 'styled-components';
 import { useAnimationStore } from '../stores/animationStore';
-import { CommandType } from '../types/animation.types';
+import type { AnimationCommand } from '../types/animation.types';
 
-const StringContainer = styled.div`
+const charFlip = keyframes`
+  0%   { transform: rotateY(0deg); }
+  50%  { transform: rotateY(90deg); }
+  100% { transform: rotateY(0deg); }
+`;
+
+const Container = styled.div`
   display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 200px;
-  padding: 40px;
-  background: linear-gradient(180deg, #1a1a2e 0%, #0f0f23 100%);
-  border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-  font-family: 'Fira Code', 'Monaco', monospace;
-`;
-
-const CharacterBox = styled(animated.div)<{ $highlighted?: boolean }>`
-  display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 50px;
-  margin: 0 2px;
-  background: ${props => props.$highlighted 
-    ? 'linear-gradient(135deg, #ff6b6b 0%, #ff8787 100%)'
-    : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
-  border-radius: 8px;
-  color: white;
-  font-size: 24px;
-  font-weight: bold;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-  transition: all 0.3s ease;
-  
-  &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-  }
+  width: 100%;
+  height: 100%;
+  padding: 2rem;
+  user-select: none;
 `;
 
-const IndexLabel = styled.div`
-  position: absolute;
-  bottom: -20px;
-  font-size: 10px;
-  color: #888;
+const CharsRow = styled.div`
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 700px;
+  padding: 1.5rem;
 `;
 
-interface CharacterData {
-  char: string;
-  index: number;
-  highlighted: boolean;
-  isNew: boolean;
-}
+type CharStatus = 'idle' | 'highlight' | 'comparing' | 'changed' | 'matched';
+
+const statusBg: Record<CharStatus, string> = {
+  idle: 'rgba(255,255,255,0.05)',
+  highlight: 'rgba(255,215,64,0.2)',
+  comparing: 'rgba(24,255,255,0.2)',
+  changed: 'rgba(0,230,118,0.2)',
+  matched: 'rgba(102,126,234,0.2)',
+};
+const statusBorder: Record<CharStatus, string> = {
+  idle: 'rgba(255,255,255,0.08)',
+  highlight: 'rgba(255,215,64,0.4)',
+  comparing: 'rgba(24,255,255,0.4)',
+  changed: 'rgba(0,230,118,0.45)',
+  matched: 'rgba(102,126,234,0.4)',
+};
+
+const CharBox = styled(animated.div)<{ $status: CharStatus }>`
+  width: 38px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary, #e0e0e0);
+  border-radius: 6px;
+  background: ${p => statusBg[p.$status]};
+  border: 1px solid ${p => statusBorder[p.$status]};
+  transition: background 0.25s, border-color 0.25s;
+  ${p => p.$status === 'changed' && css`animation: ${charFlip} 0.4s ease-out;`}
+`;
+
+const IdxRow = styled.div`
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 700px;
+`;
+
+const IdxLabel = styled.div`
+  width: 38px;
+  text-align: center;
+  font-size: 9px;
+  color: var(--text-tertiary, #555);
+  font-family: var(--font-mono, monospace);
+`;
+
+const StringLabel = styled.div`
+  margin-top: 1rem;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  font-size: 13px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary, #aaa);
+  max-width: 500px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const InfoLabel = styled.div`
+  font-size: 11px;
+  color: var(--text-tertiary, #666);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-top: 10px;
+`;
+
+const ActionLabel = styled.div`
+  margin-top: 4px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--accent-cyan, #18ffff);
+`;
+
+const EmptyMsg = styled.div`
+  color: var(--text-tertiary, #555);
+  font-style: italic;
+  padding: 3rem;
+  font-size: 13px;
+`;
+
+interface CharState { ch: string; status: CharStatus; }
 
 export const AnimatedString: React.FC = () => {
-  const { currentCommand } = useAnimationStore();
-  const [characters, setCharacters] = useState<CharacterData[]>([]);
-  const [stringValue, setStringValue] = useState('HELLO WORLD');
-  
-  // Initialize characters
+  const { currentStepIndex, currentStep, debugState, vizData } = useAnimationStore();
+  const currentStepCommands: AnimationCommand[] = useAnimationStore(
+    s => (s as any).currentStepCommands ?? []
+  );
+  const previousVariables = useAnimationStore(s => s.previousVariables);
+
+  const [chars, setChars] = useState<CharState[]>([]);
+  const [fullStr, setFullStr] = useState('');
+  const [actionText, setActionText] = useState('');
+
+  const findStringVar = useCallback((vars: Record<string, any>): string | null => {
+    if (!vars) return null;
+    const ds = vizData?.visualizer_config?.data_structures;
+    const hints = [...(ds?.strings ?? [])];
+    const names = ['text', 'string', 'str', 'word', 'sentence', 'pattern', 's', 'result'];
+    for (const n of [...hints, ...names]) {
+      if (typeof vars[n] === 'string' && vars[n].length > 0) return vars[n];
+    }
+    // Fallback: any string > 1 char
+    for (const [k, v] of Object.entries(vars)) {
+      if (k.startsWith('__')) continue;
+      if (typeof v === 'string' && v.length > 1) return v;
+    }
+    return null;
+  }, [vizData]);
+
   useEffect(() => {
-    const chars = stringValue.split('').map((char, index) => ({
-      char,
-      index,
-      highlighted: false,
-      isNew: false
+    if (currentStepIndex < 0 || !currentStep) {
+      if (debugState === 'idle' || debugState === 'ready') { setChars([]); setFullStr(''); setActionText(''); }
+      return;
+    }
+
+    const str = findStringVar(currentStep.variables);
+    if (str === null) { setChars([]); setFullStr(''); return; }
+
+    const prevStr = findStringVar(previousVariables) ?? '';
+    setFullStr(str);
+
+    const newChars: CharState[] = str.split('').map((ch, i) => ({
+      ch,
+      status: (prevStr[i] !== undefined && prevStr[i] !== ch) ? 'changed' : 'idle' as CharStatus,
     }));
-    setCharacters(chars);
-  }, [stringValue]);
-  
-  // Handle animation commands
-  useEffect(() => {
-    if (!currentCommand) return;
-    
-    const updatedChars = [...characters];
-    
-    switch (currentCommand.type) {
-      case CommandType.CREATE:
-        // Add new characters
-        if (currentCommand.values?.characters) {
-          const newChars = currentCommand.values.characters.split('');
-          newChars.forEach((char: string, idx: number) => {
-            updatedChars.push({
-              char,
-              index: updatedChars.length,
-              highlighted: true,
-              isNew: true
-            });
-          });
-        }
-        break;
-        
-      case CommandType.DELETE:
-        // Remove characters at indices
-        if (currentCommand.indices) {
-          // Sort indices in descending order to remove from end first
-          const indicesToRemove = [...currentCommand.indices].sort((a, b) => b - a);
-          indicesToRemove.forEach(idx => {
-            if (idx < updatedChars.length) {
-              updatedChars.splice(idx, 1);
-            }
-          });
-          // Re-index
-          updatedChars.forEach((char, idx) => char.index = idx);
-        }
-        break;
-        
-      case CommandType.SET_VALUE:
-        // Replace characters
-        if (currentCommand.indices && currentCommand.values?.new_char) {
-          currentCommand.indices.forEach(idx => {
-            if (updatedChars[idx]) {
-              updatedChars[idx].char = currentCommand.values!.new_char;
-              updatedChars[idx].highlighted = true;
-            }
-          });
-        }
-        break;
-        
-      case CommandType.HIGHLIGHT:
-        // Reset all highlights first
-        updatedChars.forEach(char => char.highlighted = false);
-        // Highlight specified indices
-        if (currentCommand.indices) {
-          currentCommand.indices.forEach(idx => {
-            if (updatedChars[idx]) {
-              updatedChars[idx].highlighted = true;
-            }
-          });
-        }
-        break;
-        
-      case CommandType.MOVE:
-        // Rearrange characters (for reversal, etc.)
-        if (currentCommand.values?.to_positions && currentCommand.indices) {
-          const temp = [...updatedChars];
-          currentCommand.indices.forEach((fromIdx, i) => {
-            const toIdx = currentCommand.values!.to_positions[i];
-            if (temp[fromIdx] && toIdx !== undefined) {
-              updatedChars[toIdx] = temp[fromIdx];
-            }
-          });
-        }
-        break;
+
+    // Mark new characters
+    for (let i = prevStr.length; i < newChars.length; i++) {
+      newChars[i].status = 'changed';
     }
-    
-    setCharacters(updatedChars);
-    
-    // Clear highlights after animation
-    if (currentCommand.type !== CommandType.HIGHLIGHT) {
-      setTimeout(() => {
-        setCharacters(prev => prev.map(char => ({ ...char, highlighted: false, isNew: false })));
-      }, currentCommand.duration);
+
+    // Apply command effects
+    let action = '';
+    for (const cmd of currentStepCommands) {
+      const t = typeof cmd.type === 'string' ? cmd.type.toUpperCase() : '';
+      const indices: number[] = (cmd as any).indices ?? [];
+      const vals = cmd.values ?? {};
+
+      if (t === 'HIGHLIGHT' || t === 'COLOR_CHANGE') {
+        for (const i of indices) { if (newChars[i]) newChars[i].status = 'highlight'; }
+        if (vals.pattern) action = `match "${vals.pattern}"`;
+      } else if (t === 'COMPARE') {
+        for (const i of indices) { if (newChars[i]) newChars[i].status = 'comparing'; }
+        action = 'compare';
+      } else if (t === 'SET_VALUE') {
+        for (const i of indices) { if (newChars[i]) newChars[i].status = 'changed'; }
+        action = `set [${indices.join(',')}]`;
+      } else if (t === 'MOVE') {
+        for (const i of indices) { if (newChars[i]) newChars[i].status = 'highlight'; }
+        action = 'move';
+      } else if (t === 'CREATE') {
+        action = 'create';
+      } else if (t === 'DELETE') {
+        action = 'delete';
+      }
     }
-  }, [currentCommand]);
-  
+
+    setChars(newChars);
+    if (action) setActionText(action);
+  }, [currentStepIndex, currentStep, currentStepCommands, previousVariables, findStringVar, debugState]);
+
+  const springs = useSprings(
+    chars.length,
+    chars.map(() => ({
+      opacity: 1, transform: 'translateY(0px)',
+      config: { tension: 200, friction: 20 },
+      from: { opacity: 0.5, transform: 'translateY(-8px)' },
+    }))
+  );
+
+  if (chars.length === 0) {
+    return <Container><EmptyMsg>No string data</EmptyMsg></Container>;
+  }
+
   return (
-    <StringContainer>
-      {characters.map((charData, idx) => {
-        const springProps = useSpring({
-          from: { opacity: charData.isNew ? 0 : 1, transform: 'scale(1) rotate(0deg)' },
-          to: { 
-            opacity: 1, 
-            transform: charData.highlighted 
-              ? 'scale(1.2) rotate(5deg)' 
-              : 'scale(1) rotate(0deg)'
-          },
-          config: { tension: 200, friction: 20 }
-        });
-        
-        return (
-          <CharacterBox
-            key={`${idx}-${charData.char}`}
-            style={springProps}
-            $highlighted={charData.highlighted}
-          >
-            {charData.char}
-            <IndexLabel>{idx}</IndexLabel>
-          </CharacterBox>
-        );
-      })}
-    </StringContainer>
+    <Container>
+      <CharsRow>
+        {springs.map((style, i) => {
+          const c = chars[i];
+          if (!c) return null;
+          return (
+            <CharBox key={i} style={style} $status={c.status}>
+              {c.ch === ' ' ? '\u00B7' : c.ch}
+            </CharBox>
+          );
+        })}
+      </CharsRow>
+      <IdxRow>
+        {chars.map((_, i) => <IdxLabel key={i}>{i}</IdxLabel>)}
+      </IdxRow>
+      <StringLabel>"{fullStr}"</StringLabel>
+      <InfoLabel>String ({chars.length} chars)</InfoLabel>
+      {actionText && <ActionLabel>{actionText}</ActionLabel>}
+    </Container>
   );
 };
+
+export default AnimatedString;

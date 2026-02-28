@@ -315,10 +315,22 @@ class ExecutionService:
             # Serialize execution steps
             serialized_steps = []
             for step in steps:
+                # Safely convert variables for JSON serialization
+                safe_vars = {}
+                for k, v in (step.variables_state.items() if step.variables_state else []):
+                    try:
+                        json.dumps(v)
+                        safe_vars[k] = v
+                    except (TypeError, ValueError):
+                        # Convert deque, set, and other non-JSON types to lists/strings
+                        if hasattr(v, '__iter__') and not isinstance(v, (str, bytes)):
+                            safe_vars[k] = list(v)
+                        else:
+                            safe_vars[k] = str(v)
                 step_dict = {
                     'line': step.line_number,
                     'step_type': step.step_type.name if hasattr(step.step_type, 'name') else str(step.step_type),
-                    'variables': dict(step.variables_state) if step.variables_state else {},
+                    'variables': safe_vars,
                     'stdout': step.stdout_snapshot if hasattr(step, 'stdout_snapshot') else '',
                 }
                 if hasattr(step, 'call_stack') and step.call_stack:

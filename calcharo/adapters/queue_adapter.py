@@ -2,6 +2,7 @@
 # Elements slide in from one end and gracefully exit from the other
 
 from typing import List, Dict, Any, Optional
+from collections import deque as _deque
 from .base import VisualizationAdapter, AnimationCommand, CommandType
 from calcharo.core.models import ExecutionStep, StepType
 
@@ -18,14 +19,26 @@ class QueueAdapter(VisualizationAdapter):
         self.queue_history: List[List[Any]] = []
         self.is_priority_queue = False
 
+    @staticmethod
+    def _is_queue_like(value: Any) -> bool:
+        """Check if a value is queue-like (list or deque)."""
+        return isinstance(value, (list, _deque))
+
+    @staticmethod
+    def _to_list(value: Any) -> list:
+        """Convert a deque or list to a plain list."""
+        if isinstance(value, _deque):
+            return list(value)
+        return value if isinstance(value, list) else []
+
     def can_handle(self, execution_steps: List[ExecutionStep]) -> bool:
         if not execution_steps:
             return False
 
-        queue_keywords = ['queue', 'q', 'fifo', 'bfs_queue', 'frontier', 'deque', 'pq', 'priority']
+        queue_keywords = ['queue', 'fifo', 'bfs_queue', 'frontier', 'deque']
         for step in execution_steps:
             for var_name, var_value in step.variables_state.items():
-                if isinstance(var_value, list):
+                if self._is_queue_like(var_value):
                     if any(kw in var_name.lower() for kw in queue_keywords):
                         if self.tracked_queue_name is None:
                             self.tracked_queue_name = var_name
@@ -37,6 +50,12 @@ class QueueAdapter(VisualizationAdapter):
             if hasattr(step, 'source_code') and step.source_code:
                 code = step.source_code.lower()
                 if '.pop(0)' in code or 'deque' in code or 'popleft' in code:
+                    # Try to find the queue variable by name
+                    for var_name, var_value in step.variables_state.items():
+                        if self._is_queue_like(var_value):
+                            if self.tracked_queue_name is None:
+                                self.tracked_queue_name = var_name
+                            return True
                     return True
         return False
 
@@ -44,12 +63,13 @@ class QueueAdapter(VisualizationAdapter):
         self.reset()
         previous_queue = None
 
-        for step in execution_steps:
+        for step_idx, step in enumerate(execution_steps):
             if self.tracked_queue_name and self.tracked_queue_name not in step.variables_state:
                 continue
 
-            current_queue = step.variables_state.get(self.tracked_queue_name)
-            if not isinstance(current_queue, list):
+            raw_val = step.variables_state.get(self.tracked_queue_name)
+            current_queue = self._to_list(raw_val)
+            if current_queue is None:
                 continue
 
             if previous_queue is not None:
