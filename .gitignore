@@ -170,3 +170,5 @@ phrolva/.vite/
 test_output/
 debug/
 scratch/
+
+.vercel

@@ -10,9 +10,7 @@ services:
     envVars:
       - key: HAVOC_ENV
         value: production
-      - key: GROQ_API_KEY
-        sync: false   # Set manually in Render dashboard
-      - key: HF_TOKEN
-        sync: false
+      - key: HAVOC_CORS_ORIGINS
+        value: https://havoc-viz.vercel.app,https://havoc-6qb5grdqe-purple-claws-projects.vercel.app,http://localhost:3000
     healthCheckPath: /health
     autoDeploy: true
