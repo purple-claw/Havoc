@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import CollapsibleCodePanel from '../components/CollapsibleCodePanel';
 import DebuggerToolbar from '../components/DebuggerToolbar';
-import VariableWatcher from '../components/VariableWatcher';
+import DebugPanel from '../components/DebugPanel';
+import ResizeHandle from '../components/ResizeHandle';
 import CodeUploadOverlay from '../components/CodeUploadOverlay';
 import { AnimationOrchestrator } from '../components/AnimationOrchestrator';
 import { useAnimationStore } from '../stores/animationStore';
@@ -229,7 +230,8 @@ const PlaygroundPage: React.FC<PlaygroundPageProps> = ({ onNavigate, initialCode
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [vizData, setVizData] = useState<VisualizationData | null>(null);
-  const [watcherOpen, setWatcherOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelWidth, setPanelWidth] = useState(340);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const { loadVisualization, debugState, stepForward, stepBackward } = useAnimationStore();
@@ -298,8 +300,8 @@ const PlaygroundPage: React.FC<PlaygroundPageProps> = ({ onNavigate, initialCode
           <NavBtn onClick={() => setUploadOpen(true)}>
             <Upload size={11} /> Upload
           </NavBtn>
-          <NavBtn onClick={() => setWatcherOpen(v => !v)} title="Toggle variable watcher">
-            {watcherOpen ? <EyeOff size={11} /> : <Eye size={11} />}
+          <NavBtn onClick={() => setPanelOpen(v => !v)} title="Toggle debug panel">
+            {panelOpen ? <EyeOff size={11} /> : <Eye size={11} />}
           </NavBtn>
           {hasViz && (
             <NavBtn $accent>
@@ -360,8 +362,13 @@ const PlaygroundPage: React.FC<PlaygroundPageProps> = ({ onNavigate, initialCode
           <DebuggerToolbar />
         </CanvasColumn>
 
-        {/* Right: variable watcher */}
-        <VariableWatcher open={watcherOpen} onToggle={() => setWatcherOpen(v => !v)} />
+        {/* Right: resizable debug panel */}
+        {panelOpen && (
+          <>
+            <ResizeHandle onResize={(delta) => setPanelWidth(w => Math.max(260, Math.min(600, w - delta)))} />
+            <DebugPanel width={panelWidth} explanation={vizData?.explanations} />
+          </>
+        )}
       </WorkArea>
 
       {/* ── Status bar ── */}
