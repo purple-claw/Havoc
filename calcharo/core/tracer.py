@@ -7,7 +7,6 @@ import sys
 import io
 import time
 import traceback
-import resource
 import threading
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Tuple, Type, Callable, Union
@@ -16,6 +15,12 @@ from datetime import datetime
 import builtins
 import copy
 import logging
+
+# resource module is Unix-only, we don't need it on Windows
+try:
+    import resource as _resource
+except ImportError:
+    _resource = None  # Windows doesn't have this, and that's okay
 
 from .models import (
     ExecutionStep, ExecutionContext, CallFrame, 

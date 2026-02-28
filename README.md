@@ -1,274 +1,289 @@
-# HAVOC - Hypnotic Algorithm Visualization Of Code
+# HAVOC — Helping Algo Visualization Orchestrate Comprehension
 
-> Because watching your code run is more fun than actually debugging it
+> See your code come alive. Every variable, every branch, every swap — animated and explained.
 
-## What is this?
+## What is HAVOC?
 
-HAVOC is a code execution visualizer that transforms boring Python code into mesmerizing animations. Feed it your bubble sort, watch bars dance. Give it a graph algorithm, see nodes light up like Christmas. It's basically a debugger, but prettier and less useful for actual debugging.
+HAVOC is a full-stack code execution visualizer. Paste any Python algorithm, and HAVOC traces it line-by-line, auto-detects the data structure, renders beautiful physics-driven animations, and generates AI-powered explanations — all at zero cost.
+
+**Key highlights:**
+- **12 visualization adapters** — arrays, graphs, trees, heaps, matrices, hash maps, linked lists, stacks, queues, sets, strings, and a generic fallback
+- **AST-level tracing** — every assignment, branch, loop, and function call captured
+- **10 000+ line support** with streaming, chunked processing, and 10+ minute animations
+- **AI explanations** — free-tier Groq / HuggingFace APIs with rule-based fallback; complexity analysis, analogies, learning paths
+- **Secure sandbox** — AST security validation, restricted builtins, per-IP rate limiting
+- **Zero deployment cost** — Vercel (frontend), Render.com (backend), free AI APIs
 
 ## Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                         USER CODE                              │
-│                    "Look at my algorithm!"                     │
-└────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌────────────────────────────────────────────────────────────────┐
-│                    CALCHARO ENGINE (Python)                    │
-│                                                                │
-│  ┌──────────────┐      ┌──────────────┐     ┌──────────────┐ │
-│  │ AST Parser   │ ───> │   Tracer     │ ──> │ State Cache  │ │
-│  │              │      │              │     │              │ │
-│  │ "What even  │      │ "Step by     │     │ "Remember    │ │
-│  │  is this?"  │      │  step..."    │     │ everything"  │ │
-│  └──────────────┘      └──────────────┘     └──────────────┘ │
-└────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌────────────────────────────────────────────────────────────────┐
-│                    VISUALIZATION ADAPTERS                      │
-│                                                                │
-│  ┌──────────────┐      ┌──────────────┐     ┌──────────────┐ │
-│  │ArrayAdapter  │      │GraphAdapter  │     │StringAdapter │ │
-│  │              │      │              │     │              │ │
-│  │"Bars go brr"│      │"Nodes and    │     │"Letters      │ │
-│  │              │      │ edges"       │     │ dance"       │ │
-│  └──────────────┘      └──────────────┘     └──────────────┘ │
-└────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌────────────────────────────────────────────────────────────────┐
-│                    PHROLVA ENGINE (React)                      │
-│                                                                │
-│  ┌──────────────┐      ┌──────────────┐     ┌──────────────┐ │
-│  │Spring Physics│      │   D3.js      │     │  Playback    │ │
-│  │              │      │              │     │  Controls    │ │
-│  │"Bouncy!"    │      │"Force-directed"│    │"Like YouTube"│ │
-│  └──────────────┘      └──────────────┘     └──────────────┘ │
-└────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-                        [Beautiful Animation]
+                          ┌─────────────────────┐
+                          │     User Code        │
+                          └─────────┬───────────┘
+                                    │
+                 ┌──────────────────▼──────────────────┐
+                 │          Calcharo (Python 3.8+)      │
+                 │  AST Parser → Tracer → ExecutionStep │
+                 └──────────────────┬──────────────────┘
+                                    │
+          ┌─────────────────────────▼──────────────────────────┐
+          │               Adapter Registry (auto-detect)       │
+          │  Array│Graph│String│Stack│Queue│LinkedList│Tree│    │
+          │  Heap│Matrix│HashMap│Set│Generic                   │
+          └─────────────────────────┬──────────────────────────┘
+                                    │
+              ┌─────────────────────▼─────────────────────┐
+              │         FastAPI Backend (/api)             │
+              │  Execute • Snippets • Share • Explain      │
+              │  Rate-Limit • Security Headers • Sandbox   │
+              └─────────────────────┬─────────────────────┘
+                                    │
+         ┌──────────────────────────▼──────────────────────────┐
+         │          Phrolva (React 18 + TypeScript + Vite)     │
+         │  AnimatedArray│Graph│Tree│Heap│Matrix│HashMap│…     │
+         │  CodeEditor • VariableInspector • ExplanationPanel  │
+         │  Spring Physics • D3.js Force Graphs • Zustand      │
+         └─────────────────────────────────────────────────────┘
 ```
 
 ## Tech Stack
 
-Because we needed an excuse to use all the cool kids' toys:
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| Tracing | Python 3.8+ AST | Zero-dependency, line-level control |
+| Backend | FastAPI + Uvicorn | Async, fast, auto-docs |
+| Frontend | React 18 + TypeScript + Vite | Hot reload, tree-shaking |
+| Animation | @react-spring/web + D3.js | Physics-based springs + force-directed graphs |
+| State | Zustand | Lightweight, hook-based |
+| Styling | styled-components | Scoped, themeable |
+| AI | Groq (llama-3.3-70b) / HuggingFace Inference | Free tier, rule-based fallback |
+| Deploy | Vercel + Render.com | $0 total |
 
-- **Backend**: Python 3.8+ with AST manipulation (because eval() is for cowards)
-- **Frontend**: React 18 + TypeScript (JavaScript with training wheels)
-- **Animation**: D3.js + react-spring (physics engines for bars)
-- **State**: Zustand (Redux was too mainstream)
-- **Build**: Vite (Webpack is so 2019)
-
-## Installation
+## Quick Start
 
 ```bash
-# Clone this masterpiece
+# Clone
 git clone https://github.com/purple-claw/Havoc.git
 cd Havoc
 
-# Install Python dependencies (there aren't many, we're minimalists)
+# Backend
 pip install -r requirements.txt
 
-# Install Node dependencies (warning: this downloads half the internet)
-cd phrolva
-npm install
+# Frontend
+cd phrolva && npm install && cd ..
 ```
 
-## Usage
-
-### Quick Start (For the Impatient)
+### CLI
 
 ```bash
-# Run your code through the visualizer
-python havoc.py your_algorithm.py
+# Trace and visualize a file
+python havoc.py run my_algo.py
 
-# Or pipe it like a Unix wizard
-echo "arr = [3,1,2]; arr.sort()" | python havoc.py -
+# Trace, explain, and open browser
+python havoc.py run my_algo.py --explain --open
+
+# Start the API server
+python havoc.py serve
+
+# Browse pre-built examples
+python havoc.py gallery
+
+# List all adapters
+python havoc.py adapters
+
+# Get AI explanation only
+python havoc.py explain sorting.py
 ```
 
-### Detailed Usage (For the Documentation Lovers)
+### Web App
 
-```python
-# input.py
-def bubble_sort(arr):
-    """The O(n²) classic that refuses to die"""
-    n = len(arr)
-    for i in range(n):
-        for j in range(n - i - 1):
-            if arr[j] > arr[j + 1]:
-                # The magical swap
-                arr[j], arr[j + 1] = arr[j + 1], arr[j]
-    return arr
-
-numbers = [64, 34, 25, 12, 22, 11, 90]
-sorted_nums = bubble_sort(numbers)
-print(f"Sorted: {sorted_nums}")
-```
-
-Run it:
 ```bash
-python havoc.py input.py
-# Generates visualization.json
-# Opens browser with animations
+# Terminal 1 — API
+python havoc.py serve
+
+# Terminal 2 — Frontend
+cd phrolva && npm run dev
 ```
 
-## API Reference
+Open `http://localhost:5173` → paste code → click **Run**.
 
-### Core Components
+## Pages
 
-#### Calcharo Engine
+| Route | Description |
+|-------|-------------|
+| `/#/` | Landing page with features overview |
+| `/#/playground` | Code editor + live visualizer + explanations |
+| `/#/gallery` | 20+ pre-built algorithm examples |
+| `/#/share/:id` | View a shared visualization |
 
-```python
-from calcharo import execute_and_trace
+## API Endpoints
 
-# The main function that does the heavy lifting
-steps = execute_and_trace(code: str, config: TracerConfig) -> List[ExecutionStep]
-```
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/execute` | Full pipeline: trace → adapt → animate → explain |
+| POST | `/api/execute/quick` | Fast preview (limited steps) |
+| GET | `/api/snippets/gallery` | List all pre-built examples |
+| GET | `/api/snippets/gallery/:id` | Get a specific snippet |
+| POST | `/api/share` | Create a content-addressed share link |
+| GET | `/api/share/:id` | Retrieve shared code |
+| GET | `/api/adapters` | List all available adapters |
+| GET | `/health` | Health check |
 
-Each `ExecutionStep` contains:
-- `line_number`: Where the magic happens
-- `variables_state`: Current state of all variables (yes, all of them)
-- `call_stack`: How deep is your recursion?
-- `heap_state`: Objects floating in memory
+## Supported Data Structures & Algorithms
 
-#### Visualization Adapters
+### Built-in Gallery (20+ examples)
+Bubble Sort, Quick Sort, Merge Sort, Insertion Sort, Selection Sort, Binary Search, BFS, DFS, Dijkstra, Stack Operations, Queue Operations, BST Operations, Fibonacci DP, Knapsack, Linked List, HashMap Frequency, Two Sum, Set Operations, Heap Sort, Matrix Spiral
 
-```python
-# Auto-detects what kind of visualization you need
-adapter = ArrayAdapter()  # For lists and sorting
-adapter = GraphAdapter()  # For graphs and trees
-adapter = StringAdapter() # For text manipulation
+### Auto-Detected Adapters
 
-animations = adapter.generate_animations(execution_steps)
-```
-
-#### Animation Commands
-
-The universal language of "make things move":
-
-```typescript
-interface AnimationCommand {
-  type: CommandType;        // SWAP, HIGHLIGHT, COMPARE, etc.
-  indices?: number[];        // Which elements to animate
-  duration: number;          // How long to torture the viewer
-  values?: Record<string, any>; // Additional chaos
-}
-```
+| Adapter | Detects | Visualization |
+|---------|---------|---------------|
+| ArrayAdapter | Lists, sorting | Bar chart with spring swaps |
+| GraphAdapter | Adjacency lists/matrices | Force-directed node graph |
+| StringAdapter | String manipulation | Character tiles with highlighting |
+| StackAdapter | LIFO patterns | Vertical stack with drop-in physics |
+| QueueAdapter | FIFO / deque patterns | Horizontal queue with slide animation |
+| LinkedListAdapter | Node-pointer structures | Chained boxes with arrows |
+| TreeAdapter | Nested dict trees, BST, AVL | SVG tree with glow effects |
+| HeapAdapter | Heap arrays, heapq usage | Dual view: tree + array |
+| MatrixAdapter | 2D lists, DP tables, grids | Heatmap grid with cell highlighting |
+| HashMapAdapter | Dict operations | Bucket visualization with hash function |
+| SetAdapter | Set operations | Bubble/Venn-style display |
+| GenericAdapter | Anything else | Variable timeline + control flow dashboard |
 
 ## Project Structure
 
 ```
-havoc/
-├── calcharo/              # The Python brain
-│   ├── core/             
-│   │   ├── tracer.py     # Where we play God with code execution
-│   │   ├── models.py     # Data structures (boring but necessary)
-│   │   └── config.py     # Knobs and switches
-│   └── adapters/         
-│       ├── array_adapter.py  # Makes arrays dance
-│       ├── graph_adapter.py  # Graph theory made visual
-│       └── string_adapter.py # Character choreography
-├── phrolva/               # The React beauty
+Havoc/
+├── calcharo/                  # Python tracing engine
+│   ├── core/
+│   │   ├── tracer.py          # AST-based execution tracer (696 lines)
+│   │   ├── models.py          # Immutable data models
+│   │   ├── config.py          # TracerConfig + presets
+│   │   └── errors.py          # Exception hierarchy
+│   └── adapters/
+│       ├── base.py            # VisualizationAdapter ABC
+│       ├── registry.py        # AdapterRegistry + auto-detect
+│       ├── array_adapter.py
+│       ├── graph_adapter.py
+│       ├── string_adapter.py
+│       ├── stack_adapter.py
+│       ├── queue_adapter.py
+│       ├── linkedlist_adapter.py
+│       ├── tree_adapter.py
+│       ├── heap_adapter.py
+│       ├── matrix_adapter.py
+│       ├── hashmap_adapter.py
+│       ├── set_adapter.py
+│       └── generic_adapter.py
+├── api/                       # FastAPI backend
+│   ├── main.py                # App entry, CORS, middleware
+│   ├── routes/
+│   │   ├── execute.py         # /api/execute endpoints
+│   │   ├── snippets.py        # /api/snippets gallery
+│   │   └── share.py           # /api/share links
+│   ├── services/
+│   │   ├── executor.py        # ExecutionService orchestrator
+│   │   ├── explainer.py       # AIExplainer (Groq/HF/rule-based)
+│   │   └── sandbox.py         # SandboxManager + AST security
+│   └── middleware/
+│       ├── rate_limiter.py    # Token-bucket per-IP rate limiter
+│       └── security.py        # CSP, HSTS, X-Frame-Options
+├── phrolva/                   # React frontend
 │   ├── src/
-│   │   ├── components/   # UI components that actually work
-│   │   ├── stores/       # State management (Zustand FTW)
-│   │   └── types/        # TypeScript's safety blanket
-│   └── package.json      # Where dependencies go to multiply
-└── tests/                 # Proof that it works (sometimes)
+│   │   ├── App.tsx            # Hash-based router
+│   │   ├── pages/
+│   │   │   ├── HomePage.tsx
+│   │   │   ├── PlaygroundPage.tsx
+│   │   │   ├── GalleryPage.tsx
+│   │   │   └── SharedViewPage.tsx
+│   │   ├── components/
+│   │   │   ├── AnimationOrchestrator.tsx  # Routes to correct visualizer
+│   │   │   ├── AnimatedArray.tsx
+│   │   │   ├── AnimatedGraph.tsx
+│   │   │   ├── AnimatedString.tsx
+│   │   │   ├── AnimatedStack.tsx
+│   │   │   ├── AnimatedQueue.tsx
+│   │   │   ├── AnimatedLinkedList.tsx
+│   │   │   ├── AnimatedTree.tsx
+│   │   │   ├── AnimatedHeap.tsx
+│   │   │   ├── AnimatedMatrix.tsx
+│   │   │   ├── AnimatedHashMap.tsx
+│   │   │   ├── AnimatedSet.tsx
+│   │   │   ├── AnimatedGeneric.tsx
+│   │   │   ├── CodeEditor.tsx
+│   │   │   ├── ExplanationPanel.tsx
+│   │   │   ├── VariableInspector.tsx
+│   │   │   ├── PlaybackControls.tsx
+│   │   │   └── CodeDisplay.tsx
+│   │   ├── services/api.ts
+│   │   ├── stores/animationStore.ts
+│   │   ├── styles/GlobalStyles.ts
+│   │   └── types/animation.types.ts
+│   └── package.json
+├── tests/
+│   ├── test_calcharo.py       # Core tracer tests
+│   ├── test_adapters.py       # Original adapter tests
+│   ├── test_new_adapters.py   # pytest tests for all 12 adapters
+│   ├── test_api.py            # FastAPI endpoint tests
+│   └── test_phrolva.py        # Frontend test harness
+├── havoc.py                   # CLI entry point
+├── requirements.txt
+├── Dockerfile
+├── render.yaml                # Render.com deployment
+├── vercel.json                # Vercel deployment
+└── .github/workflows/ci.yml   # GitHub Actions CI
+```
+
+## Deployment
+
+### Frontend (Vercel — free)
+1. Connect your GitHub repo to Vercel
+2. Set root directory to `phrolva`
+3. Framework: Vite
+4. Add env var: `VITE_API_URL=https://your-backend.onrender.com`
+5. Deploy
+
+### Backend (Render.com — free)
+1. Connect your GitHub repo to Render
+2. Blueprint will auto-detect `render.yaml`
+3. Set env vars in dashboard: `GROQ_API_KEY`, `HF_TOKEN` (optional, for AI)
+4. Deploy
+
+### Docker
+```bash
+docker build -t havoc-api .
+docker run -p 8000:8000 havoc-api
+```
+
+## Testing
+
+```bash
+# All tests
+pytest tests/ -v
+
+# Backend only
+pytest tests/test_api.py tests/test_new_adapters.py -v
+
+# With coverage
+pytest tests/ --cov=calcharo --cov=api --cov-report=term-missing
 ```
 
 ## Performance
 
-- **Execution Tracing**: ~1000 steps/second (Python isn't slow, you are)
-- **Animation Generation**: ~10,000 commands/second (bars go brr)
-- **Frontend Rendering**: 60fps (smooth as butter)
-- **Memory Usage**: < 500MB for 1M steps (we're not Chrome)
-- **Supported Code Size**: Up to 10,000 lines (why though?)
-
-## Limitations
-
-Because honesty is the best policy:
-
-- Only supports Python (other languages are overrated)
-- Single-threaded execution (parallelism is hard)
-- No async/await support (promises are lies)
-- Can't handle infinite loops (we tried)
-- No real-time collaboration (you have friends?)
-
-## Contributing
-
-We accept PRs that:
-1. Don't break existing tests
-2. Include new tests
-3. Have comments more sarcastic than the existing ones
-4. Actually improve something
-
-We reject PRs that:
-1. Add blockchain
-2. Rewrite everything in Rust
-3. Remove sarcastic comments
-4. Use tabs instead of spaces
-
-## Roadmap
-
-- [x] Stage 1: Basic execution tracing (done)
-- [x] Stage 2: Visualization adapters (done)
-- [x] Stage 3: React frontend (done)
-- [ ] Stage 4: API integration (coming soon™)
-- [ ] Stage 5: Performance optimization (eventually)
-- [ ] Stage 6: AI explanations (when GPT-5 arrives)
-- [ ] Stage 7: Quantum computing support (just kidding)
-
-## FAQ
-
-**Q: Why is it called HAVOC?**  
-A: Hypnotic Algorithm Visualization Of Code. Also, it causes havoc in your browser.
-
-**Q: Does it support my favorite algorithm?**  
-A: If it's written in Python and doesn't use obscure libraries, probably.
-
-**Q: Can I use this in production?**  
-A: You can use anything in production if you're brave enough.
-
-**Q: Is it fast?**  
-A: Faster than print debugging, slower than not debugging at all.
-
-**Q: Does it work on Windows?**  
-A: In theory. We developed it on Linux because we're those people.
-
-## Benchmarks
-
-| Operation | Time | Memory | Sarcasm Level |
-|-----------|------|--------|---------------|
-| Trace 100 lines | 0.1s | 10MB | Low |
-| Trace 1000 lines | 1s | 50MB | Medium |
-| Trace bubble sort | 0.5s | 20MB | High |
-| Trace quicksort | 0.3s | 15MB | Optimal |
-| Trace your spaghetti | ∞ | OOM | Maximum |
+| Operation | Capacity |
+|-----------|----------|
+| Code tracing | ~1 000 steps/sec |
+| Animation generation | ~10 000 commands/sec |
+| Frontend rendering | 60 fps |
+| Max code size | 10 000+ lines |
+| Max animation length | 10+ minutes |
+| Max steps | 100 000 (configurable) |
 
 ## License
 
-MIT - Do whatever you want, we're not your parents.
-
-## Acknowledgments
-
-- Coffee, for making this possible
-- Stack Overflow, for the ctrl+c ctrl+v
-- The Python AST module, for being surprisingly well documented
-- React, for existing
-- You, for reading this far
-
-## Support
-
-Found a bug? Open an issue.  
-Want a feature? Open a PR.  
-Need help? Read the code.  
-Still confused? Join the club.
+MIT
 
 ---
 
-*Built with love by Purple-Claw*
+*Built by [Purple-Claw](https://github.com/purple-claw)*

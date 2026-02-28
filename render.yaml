@@ -1,0 +1,18 @@
+# render.yaml — Render.com Blueprint for HAVOC backend (free tier)
+
+services:
+  - type: web
+    name: havoc-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    envVars:
+      - key: HAVOC_ENV
+        value: production
+      - key: GROQ_API_KEY
+        sync: false   # Set manually in Render dashboard
+      - key: HF_TOKEN
+        sync: false
+    healthCheckPath: /health
+    autoDeploy: true
