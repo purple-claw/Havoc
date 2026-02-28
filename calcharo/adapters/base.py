@@ -44,6 +44,7 @@ class AnimationCommand:
     duration_ms: int = 300             # How long to animate (milliseconds)
     delay_ms: int = 0                  # Wait before starting
     metadata: Dict[str, Any] = None   # Extra stuff for special cases
+    step_index: int = -1               # Which execution step produced this command
     
     def __post_init__(self):
         # Initialize empty collections if needed
@@ -61,11 +62,14 @@ class AnimationCommand:
         return {
             'type': self.command_type.name,
             'indices': self.target_indices,
+            'target_indices': self.target_indices,
             'ids': self.target_ids,
+            'target_ids': self.target_ids,
             'values': self.values,
             'duration': self.duration_ms,
             'delay': self.delay_ms,
-            'metadata': self.metadata
+            'metadata': self.metadata,
+            'step_index': self.step_index,
         }
 
 

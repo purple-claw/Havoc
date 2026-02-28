@@ -1,338 +1,247 @@
 # Array Adapter - For when lists need to be animated
 # Specializes in sorting algorithms, array manipulations, and making bars go up and down
+# Each command is now aligned to its source execution step via step_index
 
 from typing import List, Dict, Any, Optional, Tuple
 import re
+import copy
 
 from .base import VisualizationAdapter, AnimationCommand, CommandType
 from calcharo.core.models import ExecutionStep, StepType
 
 
 class ArrayAdapter(VisualizationAdapter):
-    # Handles arrays, lists, and anything that can be indexed
-    # Perfect for sorting algorithms and array manipulations
-    
+    """Handles arrays/lists — sorting, searching, manipulation.
+    Generates step-aligned animation commands so the frontend can
+    play them back one step at a time like a visual debugger.
+    """
+
     def __init__(self, array_variable_name: Optional[str] = None):
         super().__init__()
-        # The array we're tracking (auto-detect if not specified)
         self.tracked_array_name = array_variable_name
-        self.array_snapshot_timeline = []  # History of array states
-        self.comparison_positions = []  # Track what's being compared
-        self.swap_positions = []  # Track what's being swapped
-        self.access_pattern = []  # Track array access patterns
-    
+        self.array_snapshot_timeline: List[List[Any]] = []
+        self._detected_arrays: Dict[str, bool] = {}
+
     def can_handle(self, execution_steps: List[ExecutionStep]) -> bool:
-        # Can we handle this? Let's check if there's an array being manipulated
         if not execution_steps:
             return False
-        
-        # Look for arrays/lists in the execution
-        array_found = False
         for step in execution_steps:
             for var_name, var_value in step.variables_state.items():
-                if isinstance(var_value, list):
-                    array_found = True
+                if isinstance(var_value, list) and all(
+                    isinstance(v, (int, float, str)) for v in var_value
+                ):
                     if self.tracked_array_name is None:
-                        self.tracked_array_name = var_name  # Auto-detect the array
-                    break
-            if array_found:
-                break
-        
-        return array_found
-    
+                        self.tracked_array_name = var_name
+                    self._detected_arrays[var_name] = True
+                    return True
+        return False
+
+    # ─── main generation ────────────────────────────────────
     def generate_animations(self, execution_steps: List[ExecutionStep]) -> List[AnimationCommand]:
-        # Convert execution steps to beautiful array animations
+        """Walk every execution step and produce commands aligned by step_index."""
         self.reset()
-        
-        # First, analyze what we're dealing with
-        analysis = self.analyze_array_operations(execution_steps)
-        
-        # Track the array through time
-        previous_step = None
-        previous_array_state = None
-        
-        for step_index, step in enumerate(execution_steps):
-            if self.tracked_array_name not in step.variables_state:
+        self.array_snapshot_timeline = []
+
+        if not execution_steps:
+            return []
+
+        # Auto-detect tracked array if not yet set
+        if self.tracked_array_name is None:
+            for step in execution_steps:
+                for vn, vv in step.variables_state.items():
+                    if isinstance(vv, list):
+                        self.tracked_array_name = vn
+                        break
+                if self.tracked_array_name:
+                    break
+        if self.tracked_array_name is None:
+            return []
+
+        prev_arr: Optional[List[Any]] = None
+
+        for idx, step in enumerate(execution_steps):
+            cur_arr = step.variables_state.get(self.tracked_array_name)
+            if cur_arr is None or not isinstance(cur_arr, list):
+                # Step doesn't touch the array — emit a highlight for the current line
+                if prev_arr is not None:
+                    self.animation_sequence.append(AnimationCommand(
+                        command_type=CommandType.PAUSE,
+                        duration_ms=50,
+                        step_index=idx,
+                    ))
                 continue
-            
-            current_array_state = step.variables_state[self.tracked_array_name]
-            
-            # Skip if not a list
-            if not isinstance(current_array_state, list):
+
+            # Snapshot
+            snapshot = list(cur_arr)
+            self.array_snapshot_timeline.append(snapshot)
+
+            if prev_arr is None:
+                # First time we see the array — CREATE command
+                self.animation_sequence.append(AnimationCommand(
+                    command_type=CommandType.CREATE,
+                    target_indices=list(range(len(snapshot))),
+                    values={'array': snapshot, 'variable': self.tracked_array_name},
+                    duration_ms=400,
+                    step_index=idx,
+                ))
+                prev_arr = snapshot
                 continue
-            
-            # Detect what happened
-            if previous_array_state is not None:
-                # Find what changed
-                array_mutations = self.detect_array_changes(
-                    previous_array_state, 
-                    current_array_state,
-                    step
-                )
-                
-                # Generate animations based on mutations
-                for mutation in array_mutations:
-                    if mutation['type'] == 'swap':
-                        # Elements swapped positions - this is the money shot
-                        swap_cmd = self.create_swap_command(
-                            mutation['index1'],
-                            mutation['index2'],
-                            duration=500
-                        )
-                        self.animation_sequence.append(swap_cmd)
-                        
-                    elif mutation['type'] == 'comparison':
-                        # Elements being compared
-                        compare_cmd = self.create_compare_command(
-                            mutation['index1'],
-                            mutation['index2'],
-                            mutation['result'],
-                            duration=300
-                        )
-                        self.animation_sequence.append(compare_cmd)
-                        
-                    elif mutation['type'] == 'value_change':
-                        # Single value changed
-                        change_cmd = AnimationCommand(
-                            command_type=CommandType.SET_VALUE,
-                            target_indices=[mutation['index']],
-                            values={
-                                'old_value': mutation['old_value'],
-                                'new_value': mutation['new_value']
-                            },
-                            duration_ms=400
-                        )
-                        self.animation_sequence.append(change_cmd)
-                        
-                    elif mutation['type'] == 'access':
-                        # Array element accessed
-                        highlight_cmd = self.create_highlight_command(
-                            [mutation['index']],
-                            color="#00FF00",  # Green for access
-                            duration=200
-                        )
-                        self.animation_sequence.append(highlight_cmd)
-            
-            # Look for patterns in the source code
-            if hasattr(step, 'source_code') and step.source_code:
-                # Check for comparisons in source
-                if self.is_comparison_code(step.source_code):
-                    indices = self.extract_indices_from_code(step.source_code)
-                    if len(indices) >= 2:
-                        compare_cmd = self.create_compare_command(
-                            indices[0], indices[1], True, duration=250
-                        )
-                        self.animation_sequence.append(compare_cmd)
-                
-                # Check for loop iterations
-                if step.step_type == StepType.LOOP_ITERATION:
-                    # Add a small pause between iterations
-                    pause_cmd = self.create_pause_command(duration=100)
-                    self.animation_sequence.append(pause_cmd)
-            
-            # Update tracking
-            previous_array_state = current_array_state.copy() if current_array_state else None
-            previous_step = step
-        
-        # Optimize the animation sequence
-        self.optimize_animations()
-        
-        # Add final celebration if array is sorted
-        if self.is_array_sorted(previous_array_state):
-            self.add_sorted_celebration()
-        
-        return self.animation_sequence
-    
-    def analyze_array_operations(self, execution_steps: List[ExecutionStep]) -> Dict[str, Any]:
-        # Figure out what kind of array operations are happening
-        operation_stats = {
-            'total_swaps': 0,
-            'total_comparisons': 0,
-            'total_accesses': 0,
-            'algorithm_type': 'unknown',
-            'is_sorting': False,
-            'is_searching': False,
-            'array_sizes': []
-        }
-        
-        for step in execution_steps:
-            if self.tracked_array_name in step.variables_state:
-                arr = step.variables_state[self.tracked_array_name]
-                if isinstance(arr, list):
-                    operation_stats['array_sizes'].append(len(arr))
-        
-        # Guess the algorithm based on patterns
-        if operation_stats['array_sizes']:
-            # Check if array size changes (might be building/reducing)
-            size_changes = len(set(operation_stats['array_sizes'])) > 1
-            
-            # If array size is constant and we have swaps, probably sorting
-            if not size_changes and operation_stats['total_swaps'] > 0:
-                operation_stats['is_sorting'] = True
-                
-                # Try to identify specific sorting algorithm
-                # This is a rough heuristic
-                pattern = self.analyze_code_pattern(execution_steps)
-                if pattern['has_recursion']:
-                    operation_stats['algorithm_type'] = 'quicksort_or_mergesort'
-                elif pattern['has_loops']:
-                    operation_stats['algorithm_type'] = 'bubble_or_insertion_sort'
-        
-        return operation_stats
-    
-    def detect_array_changes(self, old_array: List[Any], new_array: List[Any], step: ExecutionStep) -> List[Dict[str, Any]]:
-        # Detect what changed in the array between steps
-        mutations_detected = []
-        
-        # Check for size changes
-        if len(old_array) != len(new_array):
-            if len(new_array) > len(old_array):
-                # Element added
-                mutations_detected.append({
-                    'type': 'insert',
-                    'index': len(new_array) - 1,
-                    'value': new_array[-1]
-                })
+
+            # --- detect mutations between prev_arr and cur_arr ---
+            cmds = self._diff_arrays(prev_arr, snapshot, step, idx)
+            if cmds:
+                self.animation_sequence.extend(cmds)
             else:
-                # Element removed
-                mutations_detected.append({
-                    'type': 'remove',
-                    'index': len(old_array) - 1
-                })
-            return mutations_detected
-        
-        # Check for swaps (two elements exchanged positions)
-        changed_indices = []
-        for i in range(len(old_array)):
-            if old_array[i] != new_array[i]:
-                changed_indices.append(i)
-        
-        # Perfect swap detection - both elements exchanged
-        if len(changed_indices) == 2:
-            idx1, idx2 = changed_indices
-            if old_array[idx1] == new_array[idx2] and old_array[idx2] == new_array[idx1]:
-                mutations_detected.append({
-                    'type': 'swap',
-                    'index1': idx1,
-                    'index2': idx2
-                })
-                return mutations_detected
-        
-        # Single element change - might be part of a multi-step swap (temp variable pattern)
-        # In bubble sort: temp=arr[j], arr[j]=arr[j+1], arr[j+1]=temp happens over 2 steps
-        if len(changed_indices) == 1:
-            changed_idx = changed_indices[0]
-            # Check if this looks like a partial swap
-            # If element at changed_idx now has value that was elsewhere, it's likely swap in progress
-            new_val = new_array[changed_idx]
-            
-            # See if this value existed elsewhere in the old array
-            if new_val in old_array:
-                old_positions = [i for i, v in enumerate(old_array) if v == new_val and i != changed_idx]
-                if old_positions:
-                    # Likely a swap in progress - generate swap command anyway
-                    # Guess the most likely swap partner (usually adjacent)
-                    if changed_idx > 0 and old_array[changed_idx - 1] == new_val:
-                        swap_partner = changed_idx - 1
-                    elif changed_idx < len(old_array) - 1 and old_array[changed_idx + 1] == new_val:
-                        swap_partner = changed_idx + 1
+                # No visible change — still emit a step marker so the frontend
+                # has a 1:1 mapping for this step
+                if step.step_type == StepType.CONDITION:
+                    # Comparison happening — try to emit COMPARE
+                    comp_indices = self._guess_compare_indices(step, prev_arr)
+                    if comp_indices:
+                        self.animation_sequence.append(AnimationCommand(
+                            command_type=CommandType.COMPARE,
+                            target_indices=comp_indices,
+                            values={'result': step.condition_result},
+                            duration_ms=250,
+                            step_index=idx,
+                        ))
                     else:
-                        swap_partner = old_positions[0]
-                    
-                    # Generate swap command for this partial swap
-                    mutations_detected.append({
-                        'type': 'swap',
-                        'index1': min(changed_idx, swap_partner),
-                        'index2': max(changed_idx, swap_partner)
-                    })
-                    return mutations_detected
-        
-        # Multiple changes but not a clean swap
-        if len(changed_indices) == 2:
-            # Assume it's still a swap (temp variable pattern causes this)
-            idx1, idx2 = changed_indices
-            mutations_detected.append({
-                'type': 'swap',
-                'index1': idx1,
-                'index2': idx2
-            })
-            return mutations_detected
-        
-        # Fall back to reporting individual value changes
-        for i in changed_indices:
-            mutations_detected.append({
-                'type': 'value_change',
-                'index': i,
-                'old_value': old_array[i] if i < len(old_array) else None,
-                'new_value': new_array[i] if i < len(new_array) else None
-            })
-        
-        return mutations_detected
-    
-    def is_comparison_code(self, source_code: str) -> bool:
-        # Check if the source code contains a comparison
-        comparison_operators = ['>', '<', '>=', '<=', '==', '!=']
-        return any(op in source_code for op in comparison_operators)
-    
-    def extract_indices_from_code(self, source_code: str) -> List[int]:
-        # Try to extract array indices from source code
-        # Look for patterns like arr[i], arr[j], arr[0], etc.
-        indices = []
-        
-        # Pattern for array access: word[something]
-        pattern = r'\w+\[([^\]]+)\]'
-        matches = re.findall(pattern, source_code)
-        
-        for match in matches:
-            # Try to extract numeric value if it's a literal
-            try:
-                index = int(match)
-                indices.append(index)
-            except:
-                # It's a variable, we'll need to be smarter
-                # For now, assume common patterns
-                if match == 'i':
-                    indices.append(0)  # Placeholder
-                elif match == 'j':
-                    indices.append(1)  # Placeholder
-                elif 'j + 1' in match or 'j+1' in match:
-                    indices.append(2)  # Placeholder
-        
-        return indices
-    
-    def is_array_sorted(self, array: Optional[List[Any]]) -> bool:
-        # Check if array is sorted (ascending)
-        if not array or len(array) <= 1:
-            return True
-        
-        for i in range(len(array) - 1):
-            try:
-                if array[i] > array[i + 1]:
-                    return False
-            except:
-                # Can't compare? Not sorted
-                return False
-        
-        return True
-    
-    def add_sorted_celebration(self):
-        # Add a celebration animation when array is sorted
-        # Because we need positive reinforcement
-        
-        # Wave effect - highlight each element in sequence
-        if self.array_snapshot_timeline and self.array_snapshot_timeline[-1]:
-            final_array_length = len(self.array_snapshot_timeline[-1])
-            
-            for i in range(final_array_length):
-                celebration_cmd = AnimationCommand(
-                    command_type=CommandType.HIGHLIGHT,
+                        self.animation_sequence.append(AnimationCommand(
+                            command_type=CommandType.HIGHLIGHT,
+                            target_indices=[],
+                            duration_ms=100,
+                            step_index=idx,
+                        ))
+                elif step.step_type in (StepType.LOOP_START, StepType.LOOP_END, StepType.LOOP_ITERATION):
+                    self.animation_sequence.append(AnimationCommand(
+                        command_type=CommandType.PAUSE,
+                        duration_ms=80,
+                        step_index=idx,
+                    ))
+                else:
+                    self.animation_sequence.append(AnimationCommand(
+                        command_type=CommandType.HIGHLIGHT,
+                        target_indices=[],
+                        duration_ms=100,
+                        step_index=idx,
+                    ))
+
+            prev_arr = snapshot
+
+        # Final celebration if the array ended up sorted
+        if self.array_snapshot_timeline:
+            final = self.array_snapshot_timeline[-1]
+            if self._is_sorted(final):
+                for i in range(len(final)):
+                    self.animation_sequence.append(AnimationCommand(
+                        command_type=CommandType.HIGHLIGHT,
+                        target_indices=[i],
+                        values={'color': '#00e676', 'celebration': True},
+                        duration_ms=80,
+                        delay_ms=i * 40,
+                        step_index=len(execution_steps) - 1,
+                    ))
+
+        return self.animation_sequence
+
+    # ─── diff engine ────────────────────────────────────────
+    def _diff_arrays(
+        self, old: List[Any], new: List[Any], step: ExecutionStep, step_idx: int
+    ) -> List[AnimationCommand]:
+        cmds: List[AnimationCommand] = []
+
+        # Size change → CREATE / DELETE
+        if len(new) > len(old):
+            for i in range(len(old), len(new)):
+                cmds.append(AnimationCommand(
+                    command_type=CommandType.CREATE,
                     target_indices=[i],
-                    values={'color': '#00FF00'},  # Green for success
-                    duration_ms=100,
-                    delay_ms=i * 50  # Cascade effect
-                )
-                self.animation_sequence.append(celebration_cmd)
-            
-            # Final pause to admire the sorted array
-            final_pause = self.create_pause_command(duration=500)
-            self.animation_sequence.append(final_pause)
+                    values={'value': new[i]},
+                    duration_ms=300,
+                    step_index=step_idx,
+                ))
+            return cmds
+        if len(new) < len(old):
+            for i in range(len(new), len(old)):
+                cmds.append(AnimationCommand(
+                    command_type=CommandType.DELETE,
+                    target_indices=[i],
+                    values={'value': old[i]},
+                    duration_ms=300,
+                    step_index=step_idx,
+                ))
+            return cmds
+
+        # Same size — find changed indices
+        changed = [i for i in range(len(old)) if old[i] != new[i]]
+        if not changed:
+            return cmds  # nothing changed
+
+        # Perfect swap: exactly 2 positions exchanged values
+        if len(changed) == 2:
+            a, b = changed
+            if old[a] == new[b] and old[b] == new[a]:
+                # Emit COMPARE first, then SWAP
+                cmds.append(AnimationCommand(
+                    command_type=CommandType.COMPARE,
+                    target_indices=[a, b],
+                    values={'result': True},
+                    duration_ms=200,
+                    step_index=step_idx,
+                ))
+                cmds.append(AnimationCommand(
+                    command_type=CommandType.SWAP,
+                    target_indices=[a, b],
+                    values={'old': [old[a], old[b]], 'new': [new[a], new[b]]},
+                    duration_ms=450,
+                    step_index=step_idx,
+                ))
+                return cmds
+
+        # Partial swap (temp-variable pattern) — two indices differ but not a clean swap
+        if len(changed) == 2:
+            a, b = changed
+            cmds.append(AnimationCommand(
+                command_type=CommandType.SWAP,
+                target_indices=[a, b],
+                values={'old': [old[a], old[b]], 'new': [new[a], new[b]]},
+                duration_ms=450,
+                step_index=step_idx,
+            ))
+            return cmds
+
+        # General multi-value change → SET_VALUE per changed index
+        for i in changed:
+            cmds.append(AnimationCommand(
+                command_type=CommandType.SET_VALUE,
+                target_indices=[i],
+                values={'old_value': old[i], 'new_value': new[i]},
+                duration_ms=350,
+                step_index=step_idx,
+            ))
+        return cmds
+
+    # ─── helpers ────────────────────────────────────────────
+    def _guess_compare_indices(self, step: ExecutionStep, arr: List[Any]) -> Optional[List[int]]:
+        """Try to figure out which array indices are being compared from variable state."""
+        src = step.source_code if step.source_code else ''
+        vs = step.variables_state
+        # Common patterns: arr[j] > arr[j+1]
+        j = vs.get('j')
+        i = vs.get('i')
+        if j is not None and isinstance(j, int) and 0 <= j < len(arr):
+            if j + 1 < len(arr):
+                return [j, j + 1]
+        if i is not None and isinstance(i, int) and 0 <= i < len(arr):
+            if i + 1 < len(arr):
+                return [i, i + 1]
+        return None
+
+    @staticmethod
+    def _is_sorted(arr: List[Any]) -> bool:
+        if not arr or len(arr) <= 1:
+            return True
+        try:
+            return all(arr[i] <= arr[i + 1] for i in range(len(arr) - 1))
+        except TypeError:
+            return False

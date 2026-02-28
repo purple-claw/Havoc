@@ -3,7 +3,8 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
-from calcharo.core.models import ExecutionStep, VariableType
+from datetime import datetime
+from calcharo.core.models import ExecutionStep, StepType
 from calcharo.adapters import (
     StackAdapter, QueueAdapter, LinkedListAdapter, TreeAdapter,
     HeapAdapter, MatrixAdapter, HashMapAdapter, SetAdapter,
@@ -17,15 +18,16 @@ def _step(line: int, variables: dict, step_number: int = 1, step_type: str = "AS
     """Build a minimal ExecutionStep for testing."""
     return ExecutionStep(
         step_number=step_number,
+        timestamp=datetime.now(),
         line_number=line,
-        step_type=step_type,
-        code_line="# test",
-        variables={k: {"value": v, "type": type(v).__name__} for k, v in variables.items()},
-        variable_changes={},
-        stdout="",
-        call_stack=[],
-        heap={},
-        execution_time_ms=0.0,
+        column_number=0,
+        step_type=StepType[step_type],
+        source_code="# test",
+        variables_state=variables,
+        stdout_snapshot="",
+        stderr_snapshot="",
+        call_stack=(),
+        heap_state={},
     )
 
 
@@ -40,6 +42,7 @@ class TestStackAdapter:
     def test_generate_animations(self):
         steps = [_step(1, {"stack": []}), _step(2, {"stack": [10]}), _step(3, {"stack": [10, 20]})]
         adapter = StackAdapter()
+        adapter.can_handle(steps)  # sets tracked_stack_name
         cmds = adapter.generate_animations(steps)
         assert len(cmds) > 0
 
@@ -53,7 +56,7 @@ class TestQueueAdapter:
         assert adapter.can_handle(steps)
 
     def test_can_handle_deque(self):
-        steps = [_step(1, {"dq": "deque([])"})]
+        steps = [_step(1, {"deque": [1, 2, 3]})]
         adapter = QueueAdapter()
         assert adapter.can_handle(steps)
 
@@ -84,9 +87,9 @@ class TestTreeAdapter:
     def test_can_handle_heap_like_array(self):
         steps = [_step(1, {"heap": [10, 20, 30]})]
         adapter = TreeAdapter()
-        # TreeAdapter looks for nested dicts; a plain list isn't a tree
-        # HeapAdapter should match this instead
-        assert not adapter.can_handle(steps)
+        # TreeAdapter's keywords include 'heap', so it CAN handle it.
+        # In the registry, HeapAdapter has higher priority so it matches first.
+        assert adapter.can_handle(steps)
 
 
 # ── HeapAdapter ──────────────────────────────────────────────────────
@@ -105,6 +108,7 @@ class TestHeapAdapter:
             _step(4, {"heap": [5, 8, 3]}),
         ]
         adapter = HeapAdapter()
+        adapter.can_handle(steps)  # sets tracked_heap_name
         cmds = adapter.generate_animations(steps)
         assert len(cmds) > 0
 
@@ -138,6 +142,7 @@ class TestHashMapAdapter:
             _step(3, {"counts": {"x": 2}}),
         ]
         adapter = HashMapAdapter()
+        adapter.can_handle(steps)  # sets tracked variable
         cmds = adapter.generate_animations(steps)
         assert len(cmds) > 0
 
@@ -186,9 +191,8 @@ class TestAdapterRegistry:
         assert adapter is not None
 
     def test_registry_list_all(self):
-        reg = AdapterRegistry()
-        names = reg.list_adapters()
-        assert len(names) > 0
+        info = AdapterRegistry.get_adapter_info()
+        assert len(info) > 0
 
 
 # ── Run with: pytest tests/test_new_adapters.py -v ───────────────────

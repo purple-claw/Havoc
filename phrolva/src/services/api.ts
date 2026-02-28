@@ -3,7 +3,9 @@
 
 import type { ExecuteResponse, GallerySnippet } from '../types/animation.types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+// Use relative path in dev (Vite proxy will forward to backend)
+// In production, use environment variable or default to /api
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 class HavocAPI {
   private baseUrl: string;

@@ -76,6 +76,12 @@ export interface VisualizerConfig {
   theme?: 'dark' | 'light';
   source_code?: string;
   total_steps?: number;
+  data_structures?: {
+    arrays?: string[];
+    dicts?: string[];
+    sets?: string[];
+    strings?: string[];
+  };
 }
 
 export interface ExplanationData {

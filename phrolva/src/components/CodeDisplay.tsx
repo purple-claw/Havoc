@@ -1,76 +1,40 @@
-// CodeDisplay - Shows the source code being visualized
-// With line highlighting as execution progresses
-
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { useAnimationStore } from '../stores/animationStore';
 
-const CodeContainer = styled.div`
-  background: #1e1e2e;
-  border-radius: 12px;
-  padding: 20px;
-  font-family: 'Fira Code', 'Monaco', monospace;
-  font-size: 14px;
-  overflow: auto;
-  max-height: 600px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+/* ───── styled ───── */
+const Wrap = styled.div`
+  background:var(--bg-elevated);border-radius:var(--radius-lg);
+  border:1px solid var(--glass-border);overflow:hidden;
+`;
+const Head = styled.div`
+  display:flex;align-items:center;gap:8px;padding:8px 14px;
+  background:var(--bg-card);border-bottom:1px solid var(--glass-border);
+`;
+const Dot = styled.span<{$c:string}>`width:8px;height:8px;border-radius:50%;background:${p=>p.$c};opacity:.6;`;
+const FName = styled.span`font-size:11px;font-family:var(--font-mono);color:var(--text-tertiary);margin-left:6px;`;
+
+const Body = styled.div`max-height:400px;overflow:auto;`;
+
+const Line = styled.div<{$active?:boolean;$executed?:boolean}>`
+  display:flex;padding:2px 0;
+  background:${p=>p.$active?'rgba(0,230,118,0.07)':p.$executed?'rgba(0,230,118,0.02)':'transparent'};
+  border-left:2.5px solid ${p=>p.$active?'var(--accent-green)':p.$executed?'rgba(0,230,118,0.15)':'transparent'};
+  transition:all .2s;
+  &:hover{background:rgba(255,255,255,0.015);}
+`;
+const LNum = styled.span`
+  display:inline-block;width:36px;text-align:right;padding-right:12px;
+  font-family:var(--font-mono);font-size:11.5px;color:var(--text-tertiary);user-select:none;
+`;
+const LContent = styled.span`
+  flex:1;font-family:var(--font-mono);font-size:11.5px;color:var(--text-secondary);white-space:pre;
 `;
 
-const CodeHeader = styled.div`
-  display: flex;
-  align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-`;
+const Empty = styled.div`text-align:center;color:var(--text-tertiary);padding:28px;font-size:12px;`;
 
-const FileName = styled.div`
-  color: #f093fb;
-  font-weight: bold;
-  margin-left: 8px;
-`;
-
-const CodeLine = styled.div<{ $active?: boolean; $executed?: boolean }>`
-  display: flex;
-  padding: 4px 0;
-  background: ${props => 
-    props.$active ? 'rgba(240, 147, 251, 0.2)' :
-    props.$executed ? 'rgba(102, 126, 234, 0.1)' :
-    'transparent'};
-  border-left: 3px solid ${props =>
-    props.$active ? '#f093fb' :
-    props.$executed ? '#667eea' :
-    'transparent'};
-  transition: all 0.3s ease;
-  
-  &:hover {
-    background: rgba(255, 255, 255, 0.05);
-  }
-`;
-
-const LineNumber = styled.span`
-  display: inline-block;
-  width: 40px;
-  text-align: right;
-  padding-right: 16px;
-  color: #666;
-  user-select: none;
-`;
-
-const LineContent = styled.span`
-  flex: 1;
-  color: #e0e0e0;
-  white-space: pre;
-`;
-
-const NoCodeMessage = styled.div`
-  text-align: center;
-  color: #888;
-  padding: 40px;
-`;
-
-// Sample code - in real app this comes from visualization data
-const sampleCode = `arr = [5, 2, 4, 1, 3]
+/* ── default code ── */
+const SAMPLE = `arr = [5, 2, 4, 1, 3]
 n = len(arr)
 
 for i in range(n):
@@ -82,73 +46,51 @@ for i in range(n):
 
 print(f"Sorted: {arr}")`;
 
-export const CodeDisplay: React.FC = () => {
+/* ───── component ───── */
+export const CodeDisplay:React.FC = () => {
   const { visualizationData, playbackState } = useAnimationStore();
-  const [codeLines, setCodeLines] = useState<string[]>([]);
-  const [currentLine, setCurrentLine] = useState<number | null>(null);
-  const [executedLines, setExecutedLines] = useState<Set<number>>(new Set());
-  
-  // Load code from visualization data
-  useEffect(() => {
-    if (visualizationData?.metadata) {
-      // In a real implementation, we'd get the actual source code
-      // For now, use sample code
-      const lines = sampleCode.split('\n');
-      setCodeLines(lines);
+  const [lines, setLines] = useState<string[]>([]);
+  const [curLine, setCurLine] = useState<number|null>(null);
+  const [executed, setExecuted] = useState<Set<number>>(new Set());
+
+  useEffect(()=>{
+    if(visualizationData?.source_code){
+      setLines(visualizationData.source_code.split('\n'));
+    } else if(visualizationData?.metadata){
+      setLines(SAMPLE.split('\n'));
     }
-  }, [visualizationData]);
-  
-  // Update current line based on playback
-  useEffect(() => {
-    if (visualizationData && playbackState.currentFrame < visualizationData.execution.steps.length) {
-      const currentStep = visualizationData.execution.steps[playbackState.currentFrame];
-      if (currentStep) {
-        const lineNum = currentStep.line_number ?? 0;
-        setCurrentLine(lineNum);
-        
-        // Mark as executed
-        setExecutedLines(prev => {
-          const newSet = new Set(prev);
-          newSet.add(lineNum);
-          return newSet;
-        });
+  },[visualizationData]);
+
+  useEffect(()=>{
+    if(visualizationData&&playbackState.currentFrame<visualizationData.execution.steps.length){
+      const step=visualizationData.execution.steps[playbackState.currentFrame];
+      if(step){
+        const ln=step.line_number??step.line??0;
+        setCurLine(ln);
+        setExecuted(prev=>{const s=new Set(prev);s.add(ln);return s;});
       }
     }
-  }, [playbackState.currentFrame, visualizationData]);
-  
-  if (codeLines.length === 0) {
-    return (
-      <CodeContainer>
-        <NoCodeMessage>
-          📄 No code to display
-        </NoCodeMessage>
-      </CodeContainer>
-    );
-  }
-  
-  return (
-    <CodeContainer>
-      <CodeHeader>
-        <span>📄</span>
-        <FileName>input.py</FileName>
-      </CodeHeader>
-      
-      {codeLines.map((line, index) => {
-        const lineNumber = index + 1;
-        const isActive = currentLine === lineNumber;
-        const wasExecuted = executedLines.has(lineNumber);
-        
-        return (
-          <CodeLine
-            key={index}
-            $active={isActive}
-            $executed={wasExecuted}
-          >
-            <LineNumber>{lineNumber}</LineNumber>
-            <LineContent>{line}</LineContent>
-          </CodeLine>
-        );
-      })}
-    </CodeContainer>
+  },[playbackState.currentFrame,visualizationData]);
+
+  if(lines.length===0) return <Wrap><Empty>No code loaded</Empty></Wrap>;
+
+  return(
+    <Wrap>
+      <Head>
+        <Dot $c="var(--accent-red)"/><Dot $c="var(--accent-amber)"/><Dot $c="var(--accent-green)"/>
+        <FName>input.py</FName>
+      </Head>
+      <Body>
+        {lines.map((line,i)=>{
+          const n=i+1;
+          return(
+            <Line key={i} $active={curLine===n} $executed={executed.has(n)}>
+              <LNum>{n}</LNum>
+              <LContent>{line}</LContent>
+            </Line>
+          );
+        })}
+      </Body>
+    </Wrap>
   );
 };

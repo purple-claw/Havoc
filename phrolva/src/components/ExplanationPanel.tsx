@@ -1,249 +1,112 @@
-// ExplanationPanel — AI-generated algorithm explanations sidebar
-// Shows overview, complexity, step-by-step breakdowns, fun facts, and learning paths
-
 import React, { useState } from 'react';
 import styled from 'styled-components';
 import type { ExplanationData } from '../types/animation.types';
 
+/* ───── shell ───── */
 const Panel = styled.div`
-  background: #12122a;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  overflow: hidden;
+  background:var(--bg-elevated);border-radius:var(--radius-lg);
+  border:1px solid var(--glass-border);overflow:hidden;
 `;
 
-const PanelHeader = styled.div`
-  padding: 14px 16px;
-  background: rgba(102, 126, 234, 0.08);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+/* ── header ── */
+const Head = styled.div`
+  padding:10px 16px;display:flex;justify-content:space-between;align-items:center;
+  background:var(--bg-card);border-bottom:1px solid var(--glass-border);
 `;
-
 const AlgoName = styled.h3`
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #667eea, #f093fb);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  margin:0;font-size:13.5px;font-weight:700;
+  background:linear-gradient(135deg,var(--accent-green),var(--accent-cyan));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+`;
+const Badge = styled.span<{$kind:'time'|'space'}>`
+  display:inline-block;padding:2px 7px;border-radius:4px;
+  font-size:10.5px;font-family:var(--font-mono);font-weight:600;margin-left:5px;
+  background:${p=>p.$kind==='time'?'var(--accent-green-dim)':'rgba(24,255,255,0.1)'};
+  color:${p=>p.$kind==='time'?'var(--accent-green)':'var(--accent-cyan)'};
 `;
 
-const ComplexityBadge = styled.span<{ $kind: 'time' | 'space' }>`
-  display: inline-block;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-family: 'JetBrains Mono', monospace;
-  font-weight: 600;
-  background: ${({ $kind }) =>
-    $kind === 'time' ? 'rgba(67, 233, 123, 0.12)' : 'rgba(79, 172, 254, 0.12)'};
-  color: ${({ $kind }) => ($kind === 'time' ? '#43e97b' : '#4facfe')};
-  margin-right: 6px;
-`;
-
-const Body = styled.div`
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-`;
-
-const Overview = styled.p`
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.8);
-`;
-
-const SectionLabel = styled.div`
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  color: #666;
-  margin-bottom: 6px;
-`;
+/* ── body ── */
+const Body = styled.div`padding:12px 16px;display:flex;flex-direction:column;gap:12px;max-height:400px;overflow-y:auto;`;
+const Overview = styled.p`margin:0;font-size:12.5px;line-height:1.6;color:var(--text-secondary);`;
+const Label = styled.div`font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-tertiary);margin-bottom:4px;font-weight:600;`;
 
 const ConceptTag = styled.span`
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 100px;
-  font-size: 11px;
-  background: rgba(240, 147, 251, 0.1);
-  border: 1px solid rgba(240, 147, 251, 0.2);
-  color: #f093fb;
-  margin: 0 4px 4px 0;
+  display:inline-block;padding:2px 9px;border-radius:100px;font-size:10.5px;
+  background:var(--accent-green-dim);border:1px solid rgba(0,230,118,0.15);
+  color:var(--accent-green);margin:0 4px 4px 0;
 `;
 
-const StepCard = styled.div<{ $active?: boolean }>`
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: ${({ $active }) => ($active ? 'rgba(102,126,234,0.1)' : 'rgba(0,0,0,0.2)')};
-  border: 1px solid ${({ $active }) => ($active ? 'rgba(102,126,234,0.3)' : 'transparent')};
-  cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background: rgba(102, 126, 234, 0.08);
-  }
+const StepCard = styled.div<{$active?:boolean}>`
+  padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer;
+  background:${p=>p.$active?'rgba(0,230,118,0.06)':'var(--bg-card)'};
+  border:1px solid ${p=>p.$active?'rgba(0,230,118,0.2)':'var(--glass-border)'};
+  transition:all var(--transition-fast);margin-bottom:4px;
+  &:hover{background:rgba(0,230,118,0.04);}
 `;
-
-const StepTitle = styled.div`
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  margin-bottom: 4px;
-`;
-
-const StepSummary = styled.div`
-  font-size: 12px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.6);
-`;
-
-const StepDetail = styled.div`
-  font-size: 12px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.7);
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-`;
-
-const TipsList = styled.ul`
-  margin: 4px 0 0;
-  padding-left: 16px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
-  line-height: 1.6;
-`;
+const StepTitle = styled.div`font-size:12.5px;font-weight:600;margin-bottom:2px;`;
+const StepSummary = styled.div`font-size:11.5px;line-height:1.5;color:var(--text-secondary);`;
+const StepDetail = styled.div`font-size:11.5px;line-height:1.5;color:var(--text-secondary);margin-top:5px;padding-top:5px;border-top:1px solid var(--glass-border);`;
+const TipsList = styled.ul`margin:4px 0 0;padding-left:14px;font-size:10.5px;color:var(--text-tertiary);line-height:1.6;`;
 
 const FunFact = styled.div`
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: rgba(240, 147, 251, 0.06);
-  border-left: 3px solid #f093fb;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.75);
-  line-height: 1.5;
+  padding:8px 10px;border-radius:var(--radius-sm);
+  background:rgba(0,230,118,0.04);border-left:2px solid var(--accent-green);
+  font-size:11.5px;color:var(--text-secondary);line-height:1.5;
 `;
 
-const LearningPath = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+const PathItem = styled.div`
+  display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-secondary);
+`;
+const PathNum = styled.span`
+  width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:9.5px;font-weight:700;flex-shrink:0;
+  background:var(--accent-green-dim);color:var(--accent-green);
 `;
 
-const PathItem = styled.div<{ $index: number }>`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.65);
-`;
+const Empty = styled.div`padding:20px 16px;text-align:center;color:var(--text-tertiary);font-size:12px;`;
 
-const PathNumber = styled.span<{ $index: number }>`
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  background: rgba(102, 126, 234, 0.15);
-  color: #667eea;
-  flex-shrink: 0;
-`;
+/* ───── component ───── */
+interface ExplanationPanelProps { data?:ExplanationData|null; currentStep?:number; }
 
-const EmptyState = styled.div`
-  padding: 24px 16px;
-  text-align: center;
-  color: #555;
-  font-size: 13px;
-`;
+const ExplanationPanel:React.FC<ExplanationPanelProps> = ({ data, currentStep=0 }) => {
+  const [expanded, setExpanded] = useState<number|null>(null);
 
-interface ExplanationPanelProps {
-  data?: ExplanationData | null;
-  currentStep?: number;
-}
+  if(!data) return <Panel><Empty>Run code to see AI-generated explanations</Empty></Panel>;
 
-const ExplanationPanel: React.FC<ExplanationPanelProps> = ({ data, currentStep = 0 }) => {
-  const [expandedStep, setExpandedStep] = useState<number | null>(null);
-
-  if (!data) {
-    return (
-      <Panel>
-        <EmptyState>Run code to see AI-generated explanations</EmptyState>
-      </Panel>
-    );
-  }
-
-  // Find active step explanation based on current animation frame
-  const activeStepIdx = data.step_explanations?.findIndex((se) => {
-    const [start, end] = se.step_range;
-    return currentStep >= start && currentStep <= end;
+  const activeIdx = data.step_explanations?.findIndex(se=>{
+    const [s,e]=se.step_range; return currentStep>=s&&currentStep<=e;
   });
 
-  return (
+  return(
     <Panel>
-      <PanelHeader>
-        <AlgoName>{data.algorithm_name || 'Code Explanation'}</AlgoName>
+      <Head>
+        <AlgoName>{data.algorithm_name||'Explanation'}</AlgoName>
         <div>
-          {data.time_complexity && <ComplexityBadge $kind="time">T: {data.time_complexity}</ComplexityBadge>}
-          {data.space_complexity && <ComplexityBadge $kind="space">S: {data.space_complexity}</ComplexityBadge>}
+          {data.time_complexity&&<Badge $kind="time">T: {data.time_complexity}</Badge>}
+          {data.space_complexity&&<Badge $kind="space">S: {data.space_complexity}</Badge>}
         </div>
-      </PanelHeader>
-
+      </Head>
       <Body>
-        {/* Overview */}
-        {data.overview && <Overview>{data.overview}</Overview>}
+        {data.overview&&<Overview>{data.overview}</Overview>}
 
-        {/* Key Concepts */}
-        {data.key_concepts && data.key_concepts.length > 0 && (
-          <div>
-            <SectionLabel>Key Concepts</SectionLabel>
-            <div>
-              {data.key_concepts.map((c, i) => (
-                <ConceptTag key={i}>{c}</ConceptTag>
-              ))}
-            </div>
-          </div>
+        {data.key_concepts&&data.key_concepts.length>0&&(
+          <div><Label>Key Concepts</Label><div>{data.key_concepts.map((c,i)=><ConceptTag key={i}>{c}</ConceptTag>)}</div></div>
         )}
 
-        {/* Step-by-step Explanations */}
-        {data.step_explanations && data.step_explanations.length > 0 && (
-          <div>
-            <SectionLabel>Step-by-Step</SectionLabel>
-            {data.step_explanations.map((step, i) => {
-              const isActive = i === activeStepIdx;
-              const isExpanded = expandedStep === i || isActive;
-              return (
-                <StepCard
-                  key={i}
-                  $active={isActive}
-                  onClick={() => setExpandedStep(isExpanded ? null : i)}
-                  style={{ marginBottom: 6 }}
-                >
+        {data.step_explanations&&data.step_explanations.length>0&&(
+          <div><Label>Step-by-Step</Label>
+            {data.step_explanations.map((step,i)=>{
+              const isActive=i===activeIdx;
+              const isOpen=expanded===i||isActive;
+              return(
+                <StepCard key={i} $active={isActive} onClick={()=>setExpanded(isOpen?null:i)}>
                   <StepTitle>{step.title}</StepTitle>
                   <StepSummary>{step.summary}</StepSummary>
-                  {isExpanded && (
+                  {isOpen&&(
                     <>
                       <StepDetail>{step.detail}</StepDetail>
-                      {step.analogy && (
-                        <StepDetail style={{ fontStyle: 'italic', color: '#f093fb' }}>
-                          Analogy: {step.analogy}
-                        </StepDetail>
-                      )}
-                      {step.tips && step.tips.length > 0 && (
-                        <TipsList>
-                          {step.tips.map((t, j) => (
-                            <li key={j}>{t}</li>
-                          ))}
-                        </TipsList>
-                      )}
+                      {step.analogy&&<StepDetail style={{fontStyle:'italic',color:'var(--accent-green)'}}> Analogy: {step.analogy}</StepDetail>}
+                      {step.tips&&step.tips.length>0&&<TipsList>{step.tips.map((t,j)=><li key={j}>{t}</li>)}</TipsList>}
                     </>
                   )}
                 </StepCard>
@@ -252,26 +115,13 @@ const ExplanationPanel: React.FC<ExplanationPanelProps> = ({ data, currentStep =
           </div>
         )}
 
-        {/* Fun Fact */}
-        {data.fun_fact && (
-          <div>
-            <SectionLabel>Fun Fact</SectionLabel>
-            <FunFact>{data.fun_fact}</FunFact>
-          </div>
-        )}
+        {data.fun_fact&&(<div><Label>Fun Fact</Label><FunFact>{data.fun_fact}</FunFact></div>)}
 
-        {/* Learning Path */}
-        {data.learning_path && data.learning_path.length > 0 && (
-          <div>
-            <SectionLabel>What to Learn Next</SectionLabel>
-            <LearningPath>
-              {data.learning_path.map((item, i) => (
-                <PathItem key={i} $index={i}>
-                  <PathNumber $index={i}>{i + 1}</PathNumber>
-                  {item}
-                </PathItem>
-              ))}
-            </LearningPath>
+        {data.learning_path&&data.learning_path.length>0&&(
+          <div><Label>What to Learn Next</Label>
+            <div style={{display:'flex',flexDirection:'column',gap:5}}>
+              {data.learning_path.map((item,i)=><PathItem key={i}><PathNum>{i+1}</PathNum>{item}</PathItem>)}
+            </div>
           </div>
         )}
       </Body>

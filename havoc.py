@@ -67,9 +67,7 @@ def c(text: str, color: str) -> str:
 
 
 BANNER = r"""
-  ╦ ╦╔═╗╦  ╦╔═╗╔═╗
-  ╠═╣╠═╣╚╗╔╝║ ║║  
-  ╩ ╩╩ ╩ ╚╝ ╚═╝╚═╝
+  H A V O C
   Hypnotic Algorithm Visualization Of Code
 """
 

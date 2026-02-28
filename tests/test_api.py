@@ -16,7 +16,7 @@ client = TestClient(app)
 
 class TestHealthEndpoints:
     def test_health(self):
-        r = client.get("/health")
+        r = client.get("/api/health")
         assert r.status_code == 200
         data = r.json()
         assert data["status"] == "healthy"
@@ -24,7 +24,7 @@ class TestHealthEndpoints:
     def test_root(self):
         r = client.get("/")
         assert r.status_code == 200
-        assert "HAVOC" in r.json().get("name", "")
+        assert "HAVOC" in r.json().get("service", "")
 
 
 class TestAdaptersEndpoint:
@@ -32,9 +32,10 @@ class TestAdaptersEndpoint:
         r = client.get("/api/adapters")
         assert r.status_code == 200
         data = r.json()
-        assert isinstance(data, list)
-        assert len(data) >= 10  # We have 12 adapters
-        names = [a["name"] for a in data]
+        adapters = data["adapters"]
+        assert isinstance(adapters, list)
+        assert len(adapters) >= 10  # We have 12 adapters
+        names = [a["name"] for a in adapters]
         assert "ArrayAdapter" in names
 
 
@@ -79,17 +80,15 @@ class TestSnippetsEndpoint:
         r = client.get("/api/snippets/gallery")
         assert r.status_code == 200
         data = r.json()
-        assert isinstance(data, list)
-        assert len(data) > 0
-        assert "id" in data[0]
-        assert "title" in data[0]
-        assert "code" in data[0]
+        assert "categories" in data
+        assert isinstance(data["categories"], dict)
+        assert data["total"] > 0
 
     def test_get_snippet_by_id(self):
-        r = client.get("/api/snippets/gallery/bubble_sort")
+        r = client.get("/api/snippets/gallery/gallery_bubble_sort")
         assert r.status_code == 200
         data = r.json()
-        assert data["id"] == "bubble_sort"
+        assert data["id"] == "gallery_bubble_sort"
 
     def test_get_snippet_not_found(self):
         r = client.get("/api/snippets/gallery/nonexistent_algo_xyz")

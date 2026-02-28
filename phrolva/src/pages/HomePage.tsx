@@ -1,362 +1,317 @@
-// HomePage — Landing page for HAVOC
-// Hero section, feature highlights, quick-start button
-
 import React from 'react';
-import styled, { keyframes } from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
+import { motion } from 'framer-motion';
+import { Play, Layers, Brain, Shield, Code2, Share2, Terminal, ArrowRight, Sparkles, Upload, StepForward } from 'lucide-react';
 
-const gradientShift = keyframes`
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+const gradientMove = keyframes`
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 `;
-
-const float = keyframes`
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+const gridPulse = keyframes`
+  0%, 100% { opacity: 0.03; }
+  50%      { opacity: 0.06; }
+`;
+const orbFloat = keyframes`
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(30px, -40px) scale(1.1); }
+  66%  { transform: translate(-20px, 20px) scale(0.95); }
+  100% { transform: translate(0, 0) scale(1); }
 `;
 
+/* ─── layout ─── */
 const Page = styled.div`
   min-height: 100vh;
-  background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
-  color: white;
+  background: var(--bg-primary);
+  position: relative;
   overflow-x: hidden;
 `;
+const GridBg = styled.div`
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 60px 60px;
+  animation: ${gridPulse} 8s ease-in-out infinite;
+  pointer-events: none; z-index: 0;
+`;
+const Orb = styled.div<{$c:string;$s:number;$t:string;$l:string;$d:string}>`
+  position: fixed;
+  width: ${p=>p.$s}px; height: ${p=>p.$s}px;
+  border-radius: 50%;
+  background: ${p=>p.$c};
+  filter: blur(${p=>p.$s*0.6}px);
+  opacity: 0.1;
+  animation: ${orbFloat} 20s ease-in-out infinite;
+  animation-delay: ${p=>p.$d};
+  top: ${p=>p.$t}; left: ${p=>p.$l};
+  pointer-events: none; z-index: 0;
+`;
+const Content = styled.div`position: relative; z-index: 1;`;
 
+/* ─── nav ─── */
 const Nav = styled.nav`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 40px;
-  backdrop-filter: blur(10px);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: rgba(15, 15, 35, 0.8);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 32px; height: 48px;
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(5,5,5,0.6);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border-bottom: 1px solid var(--glass-border);
+`;
+const LogoWrap = styled.div`display: flex; align-items: center; gap: 10px;`;
+const LogoIcon = styled.div`
+  width: 24px; height: 24px; border-radius: 6px;
+  background: linear-gradient(135deg, var(--accent-green), #009688);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; color: #000;
+`;
+const LogoText = styled.span`font-size: 15px; font-weight: 700; letter-spacing: 0.5px;`;
+const NavLinks = styled.div`display: flex; align-items: center; gap: 4px;`;
+const NavBtn = styled.button<{$accent?:boolean}>`
+  padding: 6px 14px; border-radius: var(--radius-sm);
+  font-size: 12.5px; font-weight: 500;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  display: inline-flex; align-items: center; gap: 5px;
+  &:hover { color: var(--text-primary); background: var(--glass); }
+  ${p=>p.$accent&&css`
+    background: var(--accent-green); color: #000; font-weight: 600;
+    &:hover { background: #00c866; color: #000; }
+  `}
 `;
 
-const Logo = styled.h1`
-  font-size: 24px;
-  font-weight: 800;
-  background: linear-gradient(135deg, #667eea 0%, #f093fb 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin: 0;
-`;
-
-const NavLinks = styled.div`
-  display: flex;
-  gap: 24px;
-  align-items: center;
-`;
-
-const NavLink = styled.a`
-  color: rgba(255, 255, 255, 0.6);
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
-  transition: color 0.2s;
-
-  &:hover {
-    color: white;
-  }
-`;
-
+/* ─── hero ─── */
 const Hero = styled.section`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 100px 40px 80px;
-  position: relative;
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 80px 24px 56px;
+  max-width: 740px; margin: 0 auto;
 `;
-
-const HeroBg = styled.div`
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at center, rgba(102, 126, 234, 0.08) 0%, transparent 70%);
-  pointer-events: none;
+const Badge = styled(motion.div)`
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 14px 5px 8px; border-radius: 100px;
+  font-size: 11px; font-weight: 600;
+  color: var(--accent-green); background: var(--accent-green-dim);
+  border: 1px solid rgba(0,230,118,0.15); margin-bottom: 24px;
 `;
-
-const HeroTitle = styled.h1`
-  font-size: clamp(40px, 6vw, 72px);
-  font-weight: 900;
-  line-height: 1.1;
-  margin: 0 0 20px;
-  max-width: 800px;
-  background: linear-gradient(135deg, #fff 0%, #667eea 50%, #f093fb 100%);
+const HeroTitle = styled(motion.h1)`
+  font-size: clamp(32px, 5vw, 52px); font-weight: 800;
+  line-height: 1.1; letter-spacing: -0.03em; margin-bottom: 16px;
+`;
+const GreenSpan = styled.span`
+  background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan));
   background-size: 200% 200%;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: ${gradientShift} 6s ease-in-out infinite;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text; animation: ${gradientMove} 6s ease-in-out infinite;
+`;
+const HeroSub = styled(motion.p)`
+  font-size: 15px; line-height: 1.7; color: var(--text-secondary);
+  max-width: 480px; margin-bottom: 28px;
+`;
+const CTARow = styled(motion.div)`display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;`;
+const PrimaryBtn = styled.button`
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 24px; border-radius: var(--radius-md);
+  background: var(--accent-green); color: #000;
+  font-size: 13.5px; font-weight: 700;
+  transition: all var(--transition-base);
+  &:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,230,118,0.25); }
+  &:active { transform: scale(0.97); }
+`;
+const SecondaryBtn = styled.button`
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 24px; border-radius: var(--radius-md);
+  background: var(--glass); border: 1px solid var(--glass-border);
+  color: var(--text-primary); font-size: 13.5px; font-weight: 600;
+  transition: all var(--transition-base);
+  &:hover { background: var(--glass-hover); transform: translateY(-1px); }
 `;
 
-const HeroSub = styled.p`
-  font-size: clamp(16px, 2vw, 20px);
-  color: rgba(255, 255, 255, 0.6);
-  max-width: 600px;
-  line-height: 1.6;
-  margin: 0 0 40px;
+/* ─── how it works ─── */
+const HowSection = styled.section`
+  max-width: 880px; margin: 0 auto; padding: 0 24px 80px;
 `;
-
-const CTARow = styled.div`
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  justify-content: center;
+const SectionTag = styled.div`
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--accent-green); margin-bottom: 10px;
 `;
-
-const PrimaryBtn = styled.a`
-  padding: 14px 32px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  font-size: 16px;
-  font-weight: 700;
-  text-decoration: none;
-  cursor: pointer;
-  transition: all 0.3s;
-  border: none;
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
-  }
+const SectionTitle = styled.h2`
+  font-size: clamp(22px, 3vw, 30px); font-weight: 800;
+  letter-spacing: -0.02em; margin-bottom: 6px;
 `;
-
-const SecondaryBtn = styled.a`
-  padding: 14px 32px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: white;
-  font-size: 16px;
-  font-weight: 600;
-  text-decoration: none;
-  cursor: pointer;
-  transition: all 0.3s;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    transform: translateY(-2px);
-  }
+const SectionSub = styled.p`
+  font-size: 13.5px; color: var(--text-secondary); max-width: 440px; margin: 0 auto;
 `;
+const SectionHead = styled.div`text-align: center; margin-bottom: 40px;`;
 
-const Features = styled.section`
-  padding: 80px 40px;
+const StepsGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  @media(max-width: 768px) { grid-template-columns: 1fr; }
 `;
-
-const FeatureCard = styled.div`
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
-  padding: 28px;
-  transition: all 0.3s;
-  animation: ${float} 6s ease-in-out infinite;
-
-  &:nth-child(2) { animation-delay: -2s; }
-  &:nth-child(3) { animation-delay: -4s; }
-
+const StepCard = styled(motion.div)`
+  background: var(--bg-card);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 28px 22px;
+  text-align: center;
+  transition: all var(--transition-base);
   &:hover {
-    border-color: rgba(102, 126, 234, 0.3);
-    background: rgba(102, 126, 234, 0.04);
-    transform: translateY(-4px);
+    background: var(--bg-card-hover);
+    border-color: rgba(255,255,255,0.08);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card);
   }
 `;
-
-const FeatureIcon = styled.div`
-  font-size: 36px;
-  margin-bottom: 16px;
+const StepNum = styled.div`
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800;
+  background: var(--accent-green-dim);
+  color: var(--accent-green);
+  margin: 0 auto 14px;
 `;
+const StepTitle = styled.h3`font-size: 14px; font-weight: 700; margin-bottom: 6px;`;
+const StepDesc = styled.p`font-size: 12px; line-height: 1.6; color: var(--text-secondary);`;
 
-const FeatureTitle = styled.h3`
-  font-size: 18px;
-  font-weight: 700;
-  margin: 0 0 8px;
-  color: #fff;
+/* ─── features ─── */
+const FeatSection = styled.section`max-width: 960px; margin: 0 auto; padding: 0 24px 80px;`;
+const FGrid = styled.div`
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  @media(max-width:768px){ grid-template-columns: 1fr; }
 `;
-
-const FeatureDesc = styled.p`
-  font-size: 14px;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.55);
-  margin: 0;
-`;
-
-const DSGrid = styled.section`
-  padding: 60px 40px 80px;
-  max-width: 1200px;
-  margin: 0 auto;
-  text-align: center;
-`;
-
-const DSTitle = styled.h2`
-  font-size: 32px;
-  font-weight: 800;
-  margin: 0 0 12px;
-`;
-
-const DSSub = styled.p`
-  color: rgba(255, 255, 255, 0.5);
-  margin: 0 0 36px;
-`;
-
-const DSChips = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
-`;
-
-const DSChip = styled.span`
-  padding: 8px 18px;
-  border-radius: 100px;
-  font-size: 13px;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
-  transition: all 0.2s;
-
+const GCard = styled(motion.div)`
+  background: var(--bg-card); border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg); padding: 24px;
+  transition: all var(--transition-base);
   &:hover {
-    border-color: #667eea;
-    color: #667eea;
-    background: rgba(102, 126, 234, 0.08);
+    background: var(--bg-card-hover); border-color: rgba(255,255,255,0.1);
+    transform: translateY(-2px); box-shadow: var(--shadow-card);
   }
 `;
+const FIconWrap = styled.div<{$bg:string}>`
+  width: 36px; height: 36px; border-radius: var(--radius-md);
+  background: ${p=>p.$bg}; display: flex; align-items: center; justify-content: center;
+  margin-bottom: 14px;
+`;
+const FTitle = styled.h3`font-size: 13.5px; font-weight: 700; margin-bottom: 5px;`;
+const FDesc = styled.p`font-size: 12px; line-height: 1.6; color: var(--text-secondary);`;
 
-const Footer = styled.footer`
-  padding: 24px 40px;
-  text-align: center;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.3);
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+/* ─── DS chips ─── */
+const DSSection = styled.section`max-width: 700px; margin: 0 auto; padding: 0 24px 80px; text-align: center;`;
+const ChipWrap = styled.div`display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 24px;`;
+const Chip = styled(motion.span)`
+  padding: 6px 14px; border-radius: 100px; font-size: 12px; font-weight: 500;
+  background: var(--bg-card); border: 1px solid var(--glass-border);
+  color: var(--text-secondary); transition: all var(--transition-fast); cursor: default;
+  &:hover { color: var(--accent-green); border-color: rgba(0,230,118,0.25); background: var(--accent-green-dim); }
 `;
 
-interface HomePageProps {
-  onNavigate: (path: string) => void;
-}
+/* ─── footer ─── */
+const Footer = styled.footer`padding: 24px 24px; text-align: center; font-size: 11px; color: var(--text-tertiary);`;
 
-const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
-  const DATA_STRUCTURES = [
-    'Arrays', 'Graphs', 'Strings', 'Stacks', 'Queues',
-    'Linked Lists', 'Binary Trees', 'Heaps', 'Matrices',
-    'Hash Maps', 'Sets', 'BSTs', 'AVL Trees', 'DP Tables',
-  ];
+/* ─── data ─── */
+const FEATURES = [
+  { icon: <StepForward size={15}/>, bg: 'var(--accent-green-dim)', title: 'Step-by-Step Debugging', desc: 'Step forward and backward through every line. Watch animations update in real time.' },
+  { icon: <Layers size={15}/>, bg: 'var(--accent-red-dim)', title: '12 Visual Adapters', desc: 'Arrays, trees, graphs, heaps, hash maps, matrices, linked lists, stacks, queues, sets.' },
+  { icon: <Brain size={15}/>, bg: 'rgba(24,255,255,0.12)', title: 'AI Explanations', desc: 'Plain-English explanations, complexity analysis, analogies, and learning paths.' },
+  { icon: <Shield size={15}/>, bg: 'rgba(255,215,64,0.12)', title: 'Secure Sandbox', desc: 'AST-validated execution, blocked imports, restricted builtins, per-IP rate limiting.' },
+  { icon: <Upload size={15}/>, bg: 'var(--accent-green-dim)', title: 'Upload & Visualize', desc: 'Drag-and-drop .py files or paste code. The engine auto-detects data structures.' },
+  { icon: <Share2 size={15}/>, bg: 'var(--accent-red-dim)', title: 'Share & Embed', desc: 'Content-addressed links. Same code always produces the same shareable URL.' },
+];
+const DS = ['Arrays','Graphs','Trees','Stacks','Queues','Linked Lists','Heaps','Matrices','Hash Maps','Sets','Strings','BSTs'];
 
-  return (
-    <Page>
+const STEPS = [
+  { num: '1', title: 'Write or Upload Code', desc: 'Paste Python code, upload a .py file, or pick from the gallery.' },
+  { num: '2', title: 'Engine Parses & Traces', desc: 'HAVOC traces every line, captures variables, and maps data to visual adapters.' },
+  { num: '3', title: 'Step & Watch Live', desc: 'Step forward/backward like a debugger. See animations move in real time.' },
+];
+
+interface HomePageProps { onNavigate: (path: string) => void; }
+
+const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => (
+  <Page>
+    <GridBg />
+    <Orb $c="var(--accent-green)" $s={400} $t="8%" $l="65%" $d="0s" />
+    <Orb $c="var(--accent-red)" $s={300} $t="55%" $l="12%" $d="-7s" />
+    <Orb $c="var(--accent-cyan)" $s={220} $t="78%" $l="72%" $d="-13s" />
+    <Content>
       <Nav>
-        <Logo>HAVOC</Logo>
+        <LogoWrap><LogoIcon>H</LogoIcon><LogoText>HAVOC</LogoText></LogoWrap>
         <NavLinks>
-          <NavLink href="#" onClick={() => onNavigate('/playground')}>Playground</NavLink>
-          <NavLink href="#" onClick={() => onNavigate('/gallery')}>Gallery</NavLink>
-          <NavLink
-            href="https://github.com"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            GitHub
-          </NavLink>
+          <NavBtn onClick={()=>onNavigate('/gallery')}>Gallery</NavBtn>
+          <NavBtn onClick={()=>onNavigate('/playground')}>Playground</NavBtn>
+          <NavBtn $accent onClick={()=>onNavigate('/playground')}><Play size={12}/> Start</NavBtn>
         </NavLinks>
       </Nav>
 
       <Hero>
-        <HeroBg />
-        <HeroTitle>See Your Code Come Alive</HeroTitle>
-        <HeroSub>
-          HAVOC traces Python code step-by-step and turns it into beautiful, interactive
-          physics-driven animations. Understand any algorithm from the inside out.
+        <Badge initial={{opacity:0,scale:0.9}} animate={{opacity:1,scale:1}} transition={{delay:0.1}}>
+          <Sparkles size={11}/> Real-Time Algorithm Debugger
+        </Badge>
+        <HeroTitle initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{delay:0.15,duration:0.6}}>
+          Debug Algorithms<br/><GreenSpan>Visually</GreenSpan>
+        </HeroTitle>
+        <HeroSub initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{delay:0.25,duration:0.6}}>
+          Upload Python code. Step through it line by line. Watch data structures animate in real time — like a visual debugger for algorithms.
         </HeroSub>
-        <CTARow>
-          <PrimaryBtn onClick={() => onNavigate('/playground')}>
-            Open Playground
-          </PrimaryBtn>
-          <SecondaryBtn onClick={() => onNavigate('/gallery')}>
-            Browse Examples
-          </SecondaryBtn>
+        <CTARow initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{delay:0.35,duration:0.5}}>
+          <PrimaryBtn onClick={()=>onNavigate('/playground')}><Terminal size={14} strokeWidth={2.5}/> Open Playground</PrimaryBtn>
+          <SecondaryBtn onClick={()=>onNavigate('/gallery')}>Browse Examples <ArrowRight size={13}/></SecondaryBtn>
         </CTARow>
       </Hero>
 
-      <Features>
-        <FeatureCard>
-          <FeatureIcon>⚡</FeatureIcon>
-          <FeatureTitle>AST-Level Tracing</FeatureTitle>
-          <FeatureDesc>
-            Every assignment, branch, and function call is captured. Supports 10,000+ line
-            files and generates animations lasting 10+ minutes.
-          </FeatureDesc>
-        </FeatureCard>
-
-        <FeatureCard>
-          <FeatureIcon>🎨</FeatureIcon>
-          <FeatureTitle>12 Visual Adapters</FeatureTitle>
-          <FeatureDesc>
-            Purpose-built animations for arrays, graphs, trees, heaps, hash maps, matrices,
-            linked lists, stacks, queues, sets, strings, and more.
-          </FeatureDesc>
-        </FeatureCard>
-
-        <FeatureCard>
-          <FeatureIcon>🧠</FeatureIcon>
-          <FeatureTitle>AI Explanations</FeatureTitle>
-          <FeatureDesc>
-            Free-tier AI detects your algorithm and generates plain-English explanations
-            with complexity analysis, analogies, and learning paths.
-          </FeatureDesc>
-        </FeatureCard>
-
-        <FeatureCard>
-          <FeatureIcon>🔒</FeatureIcon>
-          <FeatureTitle>Secure Sandbox</FeatureTitle>
-          <FeatureDesc>
-            AST-validated code execution with blocked dangerous imports, restricted builtins,
-            memory limits, and per-IP rate limiting.
-          </FeatureDesc>
-        </FeatureCard>
-
-        <FeatureCard>
-          <FeatureIcon>🚀</FeatureIcon>
-          <FeatureTitle>Zero Cost Deployment</FeatureTitle>
-          <FeatureDesc>
-            Runs entirely on free tiers — Vercel for frontend, Render for backend, and
-            free AI APIs. Enterprise quality at zero expense.
-          </FeatureDesc>
-        </FeatureCard>
-
-        <FeatureCard>
-          <FeatureIcon>🔗</FeatureIcon>
-          <FeatureTitle>Share & Embed</FeatureTitle>
-          <FeatureDesc>
-            Generate unique share links for any visualization. Content-addressed URLs mean
-            the same code always produces the same link.
-          </FeatureDesc>
-        </FeatureCard>
-      </Features>
-
-      <DSGrid>
-        <DSTitle>Every Data Structure. Every Algorithm.</DSTitle>
-        <DSSub>Auto-detected from your code — no configuration needed.</DSSub>
-        <DSChips>
-          {DATA_STRUCTURES.map((ds) => (
-            <DSChip key={ds}>{ds}</DSChip>
+      <HowSection>
+        <SectionHead>
+          <SectionTag>How It Works</SectionTag>
+          <SectionTitle>Three Steps to Understanding</SectionTitle>
+          <SectionSub>From code to live visualization in seconds.</SectionSub>
+        </SectionHead>
+        <StepsGrid>
+          {STEPS.map((s, i) => (
+            <StepCard key={s.num} initial={{opacity:0,y:18}} whileInView={{opacity:1,y:0}} viewport={{once:true}} transition={{delay:i*0.1,duration:0.45}}>
+              <StepNum>{s.num}</StepNum>
+              <StepTitle>{s.title}</StepTitle>
+              <StepDesc>{s.desc}</StepDesc>
+            </StepCard>
           ))}
-        </DSChips>
-      </DSGrid>
+        </StepsGrid>
+      </HowSection>
 
-      <Footer>
-        HAVOC — Helping Algo Visualization Orchestrate Comprehension
-      </Footer>
-    </Page>
-  );
-};
+      <FeatSection>
+        <SectionHead>
+          <SectionTag>Features</SectionTag>
+          <SectionTitle>Built for Understanding</SectionTitle>
+          <SectionSub>Every tool you need to visualize, debug, and learn algorithms.</SectionSub>
+        </SectionHead>
+        <FGrid>
+          {FEATURES.map((f,i)=>(
+            <GCard key={f.title} initial={{opacity:0,y:18}} whileInView={{opacity:1,y:0}} viewport={{once:true}} transition={{delay:i*0.06,duration:0.45}}>
+              <FIconWrap $bg={f.bg}>{f.icon}</FIconWrap>
+              <FTitle>{f.title}</FTitle>
+              <FDesc>{f.desc}</FDesc>
+            </GCard>
+          ))}
+        </FGrid>
+      </FeatSection>
+
+      <DSSection>
+        <SectionTag>Supported</SectionTag>
+        <SectionTitle>Every Data Structure. Every Algorithm.</SectionTitle>
+        <SectionSub>Auto-detected from your code — zero configuration.</SectionSub>
+        <ChipWrap>
+          {DS.map((d,i)=>(
+            <Chip key={d} initial={{opacity:0,scale:0.9}} whileInView={{opacity:1,scale:1}} viewport={{once:true}} transition={{delay:i*0.03,duration:0.3}}>
+              {d}
+            </Chip>
+          ))}
+        </ChipWrap>
+      </DSSection>
+
+      <Footer>HAVOC — Hypnotic Algorithm Visualization Of Code</Footer>
+    </Content>
+  </Page>
+);
 
 export default HomePage;

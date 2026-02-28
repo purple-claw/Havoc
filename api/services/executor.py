@@ -177,11 +177,11 @@ class ExecutionService:
 
         # Build config with appropriate limits
         config = TracerConfig(
-            mode=mode,
+            tracing_mode=mode,
             max_steps=step_limit,
-            max_execution_time=300.0 if size in ('large', 'xlarge') else 60.0,
+            max_execution_time_seconds=300.0 if size in ('large', 'xlarge') else 60.0,
             max_memory_mb=512 if size in ('large', 'xlarge') else 256,
-            capture_heap=size in ('small', 'medium'),
+            capture_heap_state=size in ('small', 'medium'),
             capture_call_stack=True,
             capture_stdout=True,
         )
@@ -200,9 +200,9 @@ class ExecutionService:
             metadata = {
                 'total_steps': len(steps),
                 'execution_time_ms': round(elapsed * 1000, 2),
-                'lines_executed': len(set(s.line for s in steps if s.line)),
+                'lines_executed': len(set(s.line_number for s in steps if s.line_number)),
                 'total_lines': len(code.split('\n')),
-                'tracing_mode': config.mode.value if hasattr(config.mode, 'value') else str(config.mode),
+                'tracing_mode': config.tracing_mode.value if hasattr(config.tracing_mode, 'value') else str(config.tracing_mode),
             }
 
             return steps, metadata
@@ -211,7 +211,7 @@ class ExecutionService:
             raise ExecutionError(f"Syntax error in your code: {e}")
         except TracerTimeout as e:
             raise ExecutionError(
-                f"Code execution timed out after {config.max_execution_time}s. "
+                f"Code execution timed out after {config.max_execution_time_seconds}s. "
                 f"Your code might have an infinite loop, or it's just really ambitious."
             )
         except ExecutionError:
@@ -228,21 +228,12 @@ class ExecutionService:
     ) -> Tuple[List[Dict], str, Dict]:
         """Generate animation commands from execution steps using the adapter registry."""
         # Use hint or auto-detect
-        if adapter_hint:
-            adapter = self.registry.get_adapter(adapter_hint)
-            if not adapter:
-                # Fallback to auto-detect
-                adapter = auto_detect_adapter(code)
-                adapter_name = adapter.__class__.__name__
-            else:
-                adapter_name = adapter_hint
-        else:
-            adapter = auto_detect_adapter(code)
-            adapter_name = adapter.__class__.__name__
+        adapter = auto_detect_adapter(steps)
+        adapter_name = adapter.__class__.__name__
 
         # Generate animations
         start_time = time.time()
-        commands = adapter.generate_commands(steps, code)
+        raw_commands = adapter.generate_animations(steps)
         anim_time = time.time() - start_time
 
         # Speed presets affect animation timing
@@ -256,13 +247,18 @@ class ExecutionService:
 
         # Serialize and apply speed
         serialized_commands = []
-        for cmd in commands:
+        for cmd in raw_commands:
             cmd_dict = {
-                'type': cmd.command_type.value if hasattr(cmd.command_type, 'value') else str(cmd.command_type),
-                'target': cmd.target,
-                'value': cmd.value,
-                'duration': int(cmd.duration * multiplier),
+                'type': cmd.command_type.name if hasattr(cmd.command_type, 'name') else str(cmd.command_type),
+                'indices': cmd.target_indices or [],
+                'target_indices': cmd.target_indices or [],
+                'ids': cmd.target_ids or [],
+                'target_ids': cmd.target_ids or [],
+                'values': cmd.values or {},
+                'duration': int(cmd.duration_ms * multiplier),
+                'delay': cmd.delay_ms,
                 'metadata': cmd.metadata or {},
+                'step_index': getattr(cmd, 'step_index', -1),
             }
             serialized_commands.append(cmd_dict)
 
@@ -320,14 +316,14 @@ class ExecutionService:
             serialized_steps = []
             for step in steps:
                 step_dict = {
-                    'line': step.line,
-                    'step_type': step.step_type.value if hasattr(step.step_type, 'value') else str(step.step_type),
-                    'variables': dict(step.variables) if step.variables else {},
-                    'stdout': step.stdout if hasattr(step, 'stdout') else '',
+                    'line': step.line_number,
+                    'step_type': step.step_type.name if hasattr(step.step_type, 'name') else str(step.step_type),
+                    'variables': dict(step.variables_state) if step.variables_state else {},
+                    'stdout': step.stdout_snapshot if hasattr(step, 'stdout_snapshot') else '',
                 }
                 if hasattr(step, 'call_stack') and step.call_stack:
                     step_dict['call_stack'] = [
-                        {'function': f.function_name, 'line': f.line}
+                        {'function': f.function_name, 'line': f.line_number}
                         for f in step.call_stack
                     ]
                 serialized_steps.append(step_dict)
@@ -461,6 +457,21 @@ class ExecutionService:
         component = component_map.get(adapter_name, 'AnimatedGeneric')
         physics = physics_configs.get(component, physics_configs['AnimatedGeneric'])
 
+        # Detect primary data structures and their variable names
+        ds_info: Dict[str, Any] = {'arrays': [], 'dicts': [], 'sets': [], 'strings': []}
+        for step in steps:
+            for vn, vv in step.variables_state.items():
+                if vn.startswith('__'):
+                    continue
+                if isinstance(vv, list) and vn not in ds_info['arrays']:
+                    ds_info['arrays'].append(vn)
+                elif isinstance(vv, dict) and vn not in ds_info['dicts']:
+                    ds_info['dicts'].append(vn)
+                elif isinstance(vv, set) and vn not in ds_info['sets']:
+                    ds_info['sets'].append(vn)
+                elif isinstance(vv, str) and len(vv) > 1 and vn not in ds_info['strings']:
+                    ds_info['strings'].append(vn)
+
         return {
             'component': component,
             'adapter': adapter_name,
@@ -468,6 +479,7 @@ class ExecutionService:
             'theme': 'dark',
             'source_code': code,
             'total_steps': len(steps),
+            'data_structures': ds_info,
         }
 
     async def execute_async(
