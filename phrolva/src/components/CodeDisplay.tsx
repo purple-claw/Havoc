@@ -103,7 +103,7 @@ export const CodeDisplay: React.FC = () => {
     if (visualizationData && playbackState.currentFrame < visualizationData.execution.steps.length) {
       const currentStep = visualizationData.execution.steps[playbackState.currentFrame];
       if (currentStep) {
-        const lineNum = currentStep.line_number;
+        const lineNum = currentStep.line_number ?? 0;
         setCurrentLine(lineNum);
         
         // Mark as executed

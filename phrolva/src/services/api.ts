@@ -39,6 +39,7 @@ class HavocAPI {
     options: {
       adapter_hint?: string;
       generate_explanations?: boolean;
+      explain?: boolean;
       max_steps?: number;
       speed_preset?: string;
     } = {}
@@ -64,7 +65,7 @@ class HavocAPI {
   }
 
   /** Get the algorithm gallery grouped by category */
-  async getGallery(): Promise<{ categories: Record<string, GallerySnippet[]>; total: number }> {
+  async getGallery(): Promise<GallerySnippet[]> {
     return this.request('/snippets/gallery');
   }
 

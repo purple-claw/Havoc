@@ -114,7 +114,7 @@ export const AnimatedString: React.FC = () => {
         if (currentCommand.indices && currentCommand.values?.new_char) {
           currentCommand.indices.forEach(idx => {
             if (updatedChars[idx]) {
-              updatedChars[idx].char = currentCommand.values.new_char;
+              updatedChars[idx].char = currentCommand.values!.new_char;
               updatedChars[idx].highlighted = true;
             }
           });
@@ -139,7 +139,7 @@ export const AnimatedString: React.FC = () => {
         if (currentCommand.values?.to_positions && currentCommand.indices) {
           const temp = [...updatedChars];
           currentCommand.indices.forEach((fromIdx, i) => {
-            const toIdx = currentCommand.values.to_positions[i];
+            const toIdx = currentCommand.values!.to_positions[i];
             if (temp[fromIdx] && toIdx !== undefined) {
               updatedChars[toIdx] = temp[fromIdx];
             }

@@ -27,6 +27,7 @@ interface AnimationStore {
   // Animation execution
   executeCommand: (command: AnimationCommand) => Promise<void>;
   clearAnimations: () => void;
+  runAnimationLoop: () => Promise<void>;
 }
 
 export const useAnimationStore = create<AnimationStore>((set, get) => ({
@@ -188,7 +189,7 @@ export const useAnimationStore = create<AnimationStore>((set, get) => ({
   },
   
   // Private method for animation loop
-  runAnimationLoop: async function(this: AnimationStore) {
+  runAnimationLoop: async () => {
     const { playbackState, animationQueue } = get();
     
     while (playbackState.isPlaying && playbackState.currentFrame < animationQueue.length) {
